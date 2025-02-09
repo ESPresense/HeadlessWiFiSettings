@@ -33,15 +33,6 @@ namespace { // Helpers
         return w == content.length();
     }
 
-    String pwgen() {
-        const char *passchars = "ABCEFGHJKLMNPRSTUXYZabcdefhkmnorstvxz23456789-#@?!";
-        String password = "";
-        for (int i = 0; i < 16; i++) {
-            password.concat(passchars[random(strlen(passchars))]);
-        }
-        return password;
-    }
-
     String json_encode(const String &raw) {
         String r;
         for (unsigned int i = 0; i < raw.length(); i++) {
@@ -162,13 +153,32 @@ namespace { // Helpers
         }
     };
 
-    bool extra = false;
-
-    struct std::vector<HeadlessWiFiSettingsParameter *> primary;
-    struct std::vector<HeadlessWiFiSettingsParameter *> extras;
+    // Parallel vectors for endpoint names and parameters
+    std::vector<String> endpointNames;
+    std::vector<std::vector<HeadlessWiFiSettingsParameter *>> endpointParams;
+    uint8_t currentEndpointIndex = 0;
 
     std::vector<HeadlessWiFiSettingsParameter *> *params() {
-        return extra ? &extras : &primary;
+        // Ensure we have at least the main endpoint
+        if (endpointNames.empty()) {
+            endpointNames.push_back("main");
+            endpointParams.push_back({});
+        }
+        return &endpointParams[currentEndpointIndex];
+    }
+
+    // Find or create endpoint
+    uint8_t findOrCreateEndpoint(const String& name) {
+        // Look for existing endpoint
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == name) {
+                return i;
+            }
+        }
+        // Create new endpoint
+        endpointNames.push_back(name);
+        endpointParams.push_back({});
+        return endpointNames.size() - 1;
     }
 } // namespace
 
@@ -274,8 +284,12 @@ bool HeadlessWiFiSettingsClass::checkbox(const String &name, bool init, const St
     return x->value.toInt();
 }
 
+void HeadlessWiFiSettingsClass::markEndpoint(const String& name) {
+    currentEndpointIndex = findOrCreateEndpoint(name);
+}
+
 void HeadlessWiFiSettingsClass::markExtra() {
-    extra = true;
+    currentEndpointIndex = findOrCreateEndpoint("extra");
 }
 
 void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
@@ -283,42 +297,124 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
 
     if (onHttpSetup) onHttpSetup(&http);
 
-    http.on("/settings", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    // Get dropdown options endpoint
+    http.on("/wifi/options/", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        String path = request->url();
+
+        String paramName = path.substring(13); // Remove "/wifi/options/"
+
+        // Search all endpoints for the parameter
+        HeadlessWiFiSettingsDropdown* dropdown = nullptr;
+        for (auto& params : endpointParams) {
+            for (auto& p : params) {
+                if (p->name == paramName) {
+                    dropdown = dynamic_cast<HeadlessWiFiSettingsDropdown*>(p);
+                    if (dropdown) break;
+                }
+            }
+            if (dropdown) break;
+        }
+
+        if (!dropdown) {
+            request->send(404, "text/plain", "Dropdown not found");
+            return;
+        }
+
         AsyncResponseStream *response = request->beginResponseStream("application/json");
-        response->print("{");
+        response->print("[");
         bool needsComma = false;
-        for (auto &p : primary) {
-            auto s = p->json();
-            if (s == "") continue;
+        for (const auto& option : dropdown->options) {
             if (needsComma) response->print(",");
-            response->print(s);
+            response->printf("\"%s\"", json_encode(option).c_str());
             needsComma = true;
         }
-        response->print("}");
+        response->print("]");
         request->send(response);
     });
 
-    http.on("/settings", HTTP_POST, [this](AsyncWebServerRequest *request) {
-        bool ok = true;
+    http.on("/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        int numNetworks = WiFi.scanNetworks();
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->print("{\"networks\":{");
 
-        for (auto &p : primary) {
-            p->set(request->arg(p->name));
-            if (!p->store()) ok = false;
+        bool needsComma = false;
+        struct Network {
+            String ssid;
+            int rssi;
+        };
+        std::vector<Network> networks;
+
+        // First pass: collect all networks with their RSSI values
+        for (int i = 0; i < numNetworks; i++) {
+            String ssid = WiFi.SSID(i);
+            if (ssid.isEmpty()) continue;  // Skip hidden networks
+
+            int rssi = WiFi.RSSI(i);
+            bool found = false;
+
+            // Update existing network if we've seen it before
+            for (auto& network : networks) {
+                if (network.ssid == ssid) {
+                    if (rssi > network.rssi) {
+                        network.rssi = rssi;  // Keep the highest RSSI value
+                    }
+                    found = true;
+                    break;
+                }
+            }
+
+            // Add new network if we haven't seen it
+            if (!found) {
+                networks.push_back({ssid, rssi});
+            }
         }
 
-        if (ok) {
-            request->send(200);
-            if (onConfigSaved) onConfigSaved();
+        // Second pass: output the networks with their highest RSSI values
+        for (const auto& network : networks) {
+            if (needsComma) response->print(",");
+            response->printf("\"%s\":%d", json_encode(network.ssid).c_str(), network.rssi);
+            needsComma = true;
+        }
+
+        response->print("}}");
+        request->send(response);
+        WiFi.scanDelete();
+    });
+
+    // Handler for /wifi/{name} endpoints
+    http.on("/wifi", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        String path = request->url();
+        String endpointName;
+        size_t endpointIndex;
+
+        if (path == "/wifi") {
+            endpointName = "main";
+        } else if (path.startsWith("/wifi/")) {
+            endpointName = path.substring(6); // Remove "/wifi/"
         } else {
-            request->send(500, "text/plain", "Error writing to flash filesystem");
+            request->send(404);
+            return;
         }
-    });
 
-    http.on("/extras", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        // Find the endpoint
+        bool found = false;
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == endpointName) {
+                endpointIndex = i;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            request->send(404, "text/plain", "Endpoint not found");
+            return;
+        }
+
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         response->print("{");
         bool needsComma = false;
-        for (auto &p : extras) {
+        for (auto &p : endpointParams[endpointIndex]) {
             auto s = p->json();
             if (s == "") continue;
             if (needsComma) response->print(",");
@@ -329,10 +425,38 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         request->send(response);
     });
 
-    http.on("/extras", HTTP_POST, [this](AsyncWebServerRequest *request) {
-        bool ok = true;
+    // Handler for /wifi/{name} POST endpoints
+    http.on("/wifi", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        String path = request->url();
+        String endpointName;
+        size_t endpointIndex;
 
-        for (auto &p : extras) {
+        if (path == "/wifi") {
+            endpointName = "main";
+        } else if (path.startsWith("/wifi/")) {
+            endpointName = path.substring(6); // Remove "/wifi/"
+        } else {
+            request->send(404);
+            return;
+        }
+
+        // Find the endpoint
+        bool found = false;
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == endpointName) {
+                endpointIndex = i;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            request->send(404, "text/plain", "Endpoint not found");
+            return;
+        }
+
+        bool ok = true;
+        for (auto &p : endpointParams[endpointIndex]) {
             p->set(request->arg(p->name));
             if (!p->store()) ok = false;
         }
@@ -355,11 +479,8 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
 void HeadlessWiFiSettingsClass::portal() {
     begin();
 
-#ifdef ESP32
+    // Just disconnect and set AP mode, no need to scan since we have /wifi/scan endpoint
     WiFi.disconnect(true, true);
-#else
-    WiFi.disconnect(true);
-#endif
     WiFi.mode(WIFI_AP);
 
     Serial.println(F("Starting access point for configuration portal."));
@@ -456,40 +577,11 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
 void HeadlessWiFiSettingsClass::begin() {
     if (begun) return;
     begun = true;
-
-#ifdef PORTAL_PASSWORD
-    if (!secure) {
-        secure = checkbox(
-            F("HeadlessWiFiSettings-secure"),
-            false,
-            "Secure Portal"
-        );
-    }
-
-    if (!password.length()) {
-        password = string(
-            F("HeadlessWiFiSettings-password"),
-            8, 63,
-            "",
-            "Portal Password"
-        );
-        if (password == "") {
-            password = pwgen();
-            params()->back()->set(password);
-            params()->back()->store();
-        }
-    }
-#endif
-
     if (hostname.endsWith("-")) hostname += ESPMAC;
 }
 
 HeadlessWiFiSettingsClass::HeadlessWiFiSettingsClass() : http(80) {
-#ifdef ESP32
     hostname = F("esp32-");
-#else
-    hostname = F("esp8266-");
-#endif
 }
 
 HeadlessWiFiSettingsClass HeadlessWiFiSettings;

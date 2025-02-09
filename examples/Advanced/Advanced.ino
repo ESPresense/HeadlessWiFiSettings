@@ -17,19 +17,31 @@ void setup() {
     HeadlessWiFiSettings.onSuccess = []() { digitalWrite(LED_BUILTIN, HIGH); };
     HeadlessWiFiSettings.onFailure = []() { digitalWrite(LED_BUILTIN, LOW); };
 
-    // Define some primary settings (available at /settings endpoint)
-    String mqtt_host = HeadlessWiFiSettings.string("mqtt_host", "mqtt.example.org");
-    int mqtt_port = HeadlessWiFiSettings.integer("mqtt_port", 0, 65535, 1883);
-    String mqtt_user = HeadlessWiFiSettings.string("mqtt_user", "");
-    String mqtt_pass = HeadlessWiFiSettings.pstring("mqtt_pass", "");
+    // WiFi settings in main endpoint (/settings/main or legacy /settings)
+    String wifi_ssid = HeadlessWiFiSettings.string("wifi_ssid", "");
+    String wifi_pass = HeadlessWiFiSettings.pstring("wifi_pass", "");
 
-    // Mark the following settings as extras (available at /extras endpoint)
+    // MQTT settings in their own endpoint (/settings/mqtt)
+    HeadlessWiFiSettings.markEndpoint("mqtt");
+    String mqtt_host = HeadlessWiFiSettings.string("host", "mqtt.example.org");
+    int mqtt_port = HeadlessWiFiSettings.integer("port", 0, 65535, 1883);
+    String mqtt_user = HeadlessWiFiSettings.string("user", "");
+    String mqtt_pass = HeadlessWiFiSettings.pstring("pass", "");
+
+    // Network settings in their own endpoint (/settings/network)
+    HeadlessWiFiSettings.markEndpoint("network");
+    String hostname = HeadlessWiFiSettings.string("hostname", "esp-device");
+    bool dhcp = HeadlessWiFiSettings.checkbox("dhcp", true);
+    String static_ip = HeadlessWiFiSettings.string("ip", "192.168.1.100");
+    String gateway = HeadlessWiFiSettings.string("gateway", "192.168.1.1");
+    String netmask = HeadlessWiFiSettings.string("netmask", "255.255.255.0");
+
+    // Debug settings using legacy extras endpoint (/settings/extra or legacy /extras)
     HeadlessWiFiSettings.markExtra();
-
-    // Define some extra settings
     bool debug_mode = HeadlessWiFiSettings.checkbox("debug", false);
     float update_interval = HeadlessWiFiSettings.floating("update_interval", 0, 3600, 60.0);
-    String device_name = HeadlessWiFiSettings.string("device_name", "esp-device");
+    std::vector<String> log_levels = {"error", "warn", "info", "debug"};
+    int log_level = HeadlessWiFiSettings.dropdown("log_level", log_levels, 2);
 
     // Connect to WiFi or start portal if not configured
     if (HeadlessWiFiSettings.connect()) {
@@ -39,16 +51,30 @@ void setup() {
 
         // Print the configuration
         Serial.println("\nCurrent configuration:");
-        Serial.println("Primary settings (/settings):");
-        Serial.printf("MQTT Host: %s\n", mqtt_host.c_str());
-        Serial.printf("MQTT Port: %d\n", mqtt_port);
-        Serial.printf("MQTT User: %s\n", mqtt_user.c_str());
-        Serial.println("MQTT Pass: ********");
 
-        Serial.println("\nExtra settings (/extras):");
+        Serial.println("\nWiFi settings (/settings/main):");
+        Serial.printf("SSID: %s\n", wifi_ssid.c_str());
+        Serial.println("Password: ********");
+
+        Serial.println("\nMQTT settings (/settings/mqtt):");
+        Serial.printf("Host: %s\n", mqtt_host.c_str());
+        Serial.printf("Port: %d\n", mqtt_port);
+        Serial.printf("User: %s\n", mqtt_user.c_str());
+        Serial.println("Password: ********");
+
+        Serial.println("\nNetwork settings (/settings/network):");
+        Serial.printf("Hostname: %s\n", hostname.c_str());
+        Serial.printf("DHCP: %s\n", dhcp ? "true" : "false");
+        if (!dhcp) {
+            Serial.printf("Static IP: %s\n", static_ip.c_str());
+            Serial.printf("Gateway: %s\n", gateway.c_str());
+            Serial.printf("Netmask: %s\n", netmask.c_str());
+        }
+
+        Serial.println("\nDebug settings (/settings/extra):");
         Serial.printf("Debug Mode: %s\n", debug_mode ? "true" : "false");
         Serial.printf("Update Interval: %.1f seconds\n", update_interval);
-        Serial.printf("Device Name: %s\n", device_name.c_str());
+        Serial.printf("Log Level: %s\n", log_levels[log_level].c_str());
     }
 }
 
@@ -59,16 +85,45 @@ void loop() {
 
 /* Example curl commands to interact with the endpoints:
 
-Get current settings:
-curl http://YOUR_ESP_IP/settings
+Available endpoints:
 
-Update settings:
-curl -X POST -d "mqtt_host=test.mosquitto.org" -d "mqtt_port=1883" http://YOUR_ESP_IP/settings
+WiFi Network Scanning:
+GET /wifi/scan - Get list of available networks with signal strengths
+Example: curl http://YOUR_ESP_IP/wifi/scan
 
-Get extra settings:
-curl http://YOUR_ESP_IP/extras
+WiFi Settings:
+GET /wifi/main - Get main WiFi settings
+POST /wifi/main - Update WiFi settings
+Example: curl -X POST -d "wifi_ssid=MyNetwork" -d "wifi_pass=MyPassword" http://YOUR_ESP_IP/wifi/main
 
-Update extra settings:
-curl -X POST -d "debug=1" -d "update_interval=30.5" http://YOUR_ESP_IP/extras
+MQTT Settings:
+GET /wifi/mqtt - Get MQTT settings
+POST /wifi/mqtt - Update MQTT settings
+Example: curl -X POST -d "host=test.mosquitto.org" -d "port=1883" http://YOUR_ESP_IP/wifi/mqtt
+
+Network Settings:
+GET /wifi/network - Get network settings
+POST /wifi/network - Update network settings
+Example: curl -X POST -d "hostname=myesp" -d "dhcp=0" -d "ip=192.168.1.100" http://YOUR_ESP_IP/wifi/network
+
+Debug Settings:
+GET /wifi/extra - Get debug settings
+POST /wifi/extra - Update debug settings
+Example: curl -X POST -d "debug=1" -d "update_interval=30.5" -d "log_level=3" http://YOUR_ESP_IP/wifi/extra
+
+Dropdown Options:
+GET /wifi/options/{name} - Get options for a dropdown parameter
+Example: curl http://YOUR_ESP_IP/wifi/options/log_level
+
+Scan for WiFi networks:
+curl http://YOUR_ESP_IP/wifi/scan
+# Returns JSON with available networks and their signal strengths:
+# {
+#   "networks": {
+#     "MyNetwork": -65,
+#     "Neighbor1": -72,
+#     "Neighbor2": -85
+#   }
+# }
 
 */
