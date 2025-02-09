@@ -305,159 +305,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     begin();
 
     if (onHttpSetup) onHttpSetup(&http);
-// Handler for /settings and /settings/{name} endpoints
-http.on("/settings", HTTP_GET, [this](AsyncWebServerRequest *request) {
-    String path = request->url();
-    String endpointName;
-    size_t endpointIndex;
-
-    if (path == "/settings") {
-        endpointName = "main";
-    } else if (path.startsWith("/settings/")) {
-        endpointName = path.substring(9); // Remove "/settings/"
-    } else {
-        request->send(404);
-        return;
-    }
-
-    // Find the endpoint
-    bool found = false;
-    for (size_t i = 0; i < endpointNames.size(); i++) {
-        if (endpointNames[i] == endpointName) {
-            endpointIndex = i;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        request->send(404, "text/plain", "Endpoint not found");
-        return;
-    }
-
-    AsyncResponseStream *response = request->beginResponseStream("application/json");
-    response->print("{");
-    bool needsComma = false;
-    for (auto &p : endpointParams[endpointIndex]) {
-        auto s = p->json();
-        if (s == "") continue;
-        if (needsComma) response->print(",");
-        response->print(s);
-        needsComma = true;
-    }
-    response->print("}");
-    request->send(response);
-});
-
-// Handler for /settings and /settings/{name} POST endpoints
-http.on("/settings", HTTP_POST, [this](AsyncWebServerRequest *request) {
-    String path = request->url();
-    String endpointName;
-    size_t endpointIndex;
-
-    if (path == "/settings") {
-        endpointName = "main";
-    } else if (path.startsWith("/settings/")) {
-        endpointName = path.substring(9); // Remove "/settings/"
-    } else {
-        request->send(404);
-        return;
-    }
-
-    // Find the endpoint
-    bool found = false;
-    for (size_t i = 0; i < endpointNames.size(); i++) {
-        if (endpointNames[i] == endpointName) {
-            endpointIndex = i;
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        request->send(404, "text/plain", "Endpoint not found");
-        return;
-    }
-
-    bool ok = true;
-    for (auto &p : endpointParams[endpointIndex]) {
-        p->set(request->arg(p->name));
-        if (!p->store()) ok = false;
-    }
-
-    if (ok) {
-        request->send(200);
-        if (onConfigSaved) onConfigSaved();
-    } else {
-        request->send(500, "text/plain", "Error writing to flash filesystem");
-    }
-});
-
-    // Legacy /extras endpoint redirects to /settings/extra
-    http.on("/extras", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        // Find extra endpoint
-        size_t extraIndex = 0;
-        bool found = false;
-        for (size_t i = 0; i < endpointNames.size(); i++) {
-            if (endpointNames[i] == "extra") {
-                extraIndex = i;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            request->send(404, "text/plain", "Extra endpoint not found");
-            return;
-        }
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        response->print("{");
-        bool needsComma = false;
-        for (auto &p : endpointParams[extraIndex]) {
-            auto s = p->json();
-            if (s == "") continue;
-            if (needsComma) response->print(",");
-            response->print(s);
-            needsComma = true;
-        }
-        response->print("}");
-        request->send(response);
-    });
-
-    // Legacy /extras POST endpoint redirects to /settings/extra
-    http.on("/extras", HTTP_POST, [this](AsyncWebServerRequest *request) {
-        // Find extra endpoint
-        size_t extraIndex = 0;
-        bool found = false;
-        for (size_t i = 0; i < endpointNames.size(); i++) {
-            if (endpointNames[i] == "extra") {
-                extraIndex = i;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            request->send(404, "text/plain", "Extra endpoint not found");
-            return;
-        }
-
-        bool ok = true;
-        for (auto &p : endpointParams[extraIndex]) {
-            p->set(request->arg(p->name));
-            if (!p->store()) ok = false;
-        }
-
-        if (ok) {
-            request->send(200);
-            if (onConfigSaved) onConfigSaved();
-        } else {
-            request->send(500, "text/plain", "Error writing to flash filesystem");
-        }
-    });
-
-    // WiFi scan endpoint
+    // WiFi scan endpoint must come before the general /wifi/{name} handler
     http.on("/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
         int numNetworks = WiFi.scanNetworks();
         AsyncResponseStream *response = request->beginResponseStream("application/json");
@@ -507,6 +355,94 @@ http.on("/settings", HTTP_POST, [this](AsyncWebServerRequest *request) {
         WiFi.scanDelete();
     });
 
+    // Handler for /wifi/{name} endpoints
+    http.on("/wifi", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        String path = request->url();
+        String endpointName;
+        size_t endpointIndex;
+
+        if (path == "/wifi") {
+            endpointName = "main";
+        } else if (path.startsWith("/wifi/")) {
+            endpointName = path.substring(6); // Remove "/wifi/"
+        } else {
+            request->send(404);
+            return;
+        }
+
+        // Find the endpoint
+        bool found = false;
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == endpointName) {
+                endpointIndex = i;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            request->send(404, "text/plain", "Endpoint not found");
+            return;
+        }
+
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->print("{");
+        bool needsComma = false;
+        for (auto &p : endpointParams[endpointIndex]) {
+            auto s = p->json();
+            if (s == "") continue;
+            if (needsComma) response->print(",");
+            response->print(s);
+            needsComma = true;
+        }
+        response->print("}");
+        request->send(response);
+    });
+
+    // Handler for /wifi/{name} POST endpoints
+    http.on("/wifi", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        String path = request->url();
+        String endpointName;
+        size_t endpointIndex;
+
+        if (path == "/wifi") {
+            endpointName = "main";
+        } else if (path.startsWith("/wifi/")) {
+            endpointName = path.substring(6); // Remove "/wifi/"
+        } else {
+            request->send(404);
+            return;
+        }
+
+        // Find the endpoint
+        bool found = false;
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == endpointName) {
+                endpointIndex = i;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            request->send(404, "text/plain", "Endpoint not found");
+            return;
+        }
+
+        bool ok = true;
+        for (auto &p : endpointParams[endpointIndex]) {
+            p->set(request->arg(p->name));
+            if (!p->store()) ok = false;
+        }
+
+        if (ok) {
+            request->send(200);
+            if (onConfigSaved) onConfigSaved();
+        } else {
+            request->send(500, "text/plain", "Error writing to flash filesystem");
+        }
+    });
+
     http.onNotFound([this](AsyncWebServerRequest *request) {
         request->send(404, "text/plain", "404");
     });
@@ -517,11 +453,8 @@ http.on("/settings", HTTP_POST, [this](AsyncWebServerRequest *request) {
 void HeadlessWiFiSettingsClass::portal() {
     begin();
 
-#ifdef ESP32
+    // Just disconnect and set AP mode, no need to scan since we have /wifi/scan endpoint
     WiFi.disconnect(true, true);
-#else
-    WiFi.disconnect(true);
-#endif
     WiFi.mode(WIFI_AP);
 
     Serial.println(F("Starting access point for configuration portal."));

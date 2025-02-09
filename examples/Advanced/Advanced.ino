@@ -85,31 +85,32 @@ void loop() {
 
 /* Example curl commands to interact with the endpoints:
 
-Get current WiFi settings (both work):
-curl http://YOUR_ESP_IP/settings
-curl http://YOUR_ESP_IP/settings/main
+Scan for WiFi networks:
+curl http://YOUR_ESP_IP/wifi/scan
+
+Get current WiFi settings:
+curl http://YOUR_ESP_IP/wifi/main
 
 Update WiFi settings:
-curl -X POST -d "wifi_ssid=MyNetwork" -d "wifi_pass=MyPassword" http://YOUR_ESP_IP/settings/main
+curl -X POST -d "wifi_ssid=MyNetwork" -d "wifi_pass=MyPassword" http://YOUR_ESP_IP/wifi/main
 
 Get MQTT settings:
-curl http://YOUR_ESP_IP/settings/mqtt
+curl http://YOUR_ESP_IP/wifi/mqtt
 
 Update MQTT settings:
-curl -X POST -d "host=test.mosquitto.org" -d "port=1883" http://YOUR_ESP_IP/settings/mqtt
+curl -X POST -d "host=test.mosquitto.org" -d "port=1883" http://YOUR_ESP_IP/wifi/mqtt
 
 Get network settings:
-curl http://YOUR_ESP_IP/settings/network
+curl http://YOUR_ESP_IP/wifi/network
 
 Update network settings:
-curl -X POST -d "hostname=myesp" -d "dhcp=0" -d "ip=192.168.1.100" http://YOUR_ESP_IP/settings/network
+curl -X POST -d "hostname=myesp" -d "dhcp=0" -d "ip=192.168.1.100" http://YOUR_ESP_IP/wifi/network
 
-Get debug settings (both work):
-curl http://YOUR_ESP_IP/extras
-curl http://YOUR_ESP_IP/settings/extra
+Get debug settings:
+curl http://YOUR_ESP_IP/wifi/extra
 
 Update debug settings:
-curl -X POST -d "debug=1" -d "update_interval=30.5" -d "log_level=3" http://YOUR_ESP_IP/settings/extra
+curl -X POST -d "debug=1" -d "update_interval=30.5" -d "log_level=3" http://YOUR_ESP_IP/wifi/extra
 
 Scan for WiFi networks:
 curl http://YOUR_ESP_IP/wifi/scan
