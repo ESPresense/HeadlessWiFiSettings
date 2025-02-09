@@ -162,13 +162,32 @@ namespace { // Helpers
         }
     };
 
-    bool extra = false;
-
-    struct std::vector<HeadlessWiFiSettingsParameter *> primary;
-    struct std::vector<HeadlessWiFiSettingsParameter *> extras;
+    // Parallel vectors for endpoint names and parameters
+    std::vector<String> endpointNames;
+    std::vector<std::vector<HeadlessWiFiSettingsParameter *>> endpointParams;
+    uint8_t currentEndpointIndex = 0;
 
     std::vector<HeadlessWiFiSettingsParameter *> *params() {
-        return extra ? &extras : &primary;
+        // Ensure we have at least the main endpoint
+        if (endpointNames.empty()) {
+            endpointNames.push_back("main");
+            endpointParams.push_back({});
+        }
+        return &endpointParams[currentEndpointIndex];
+    }
+
+    // Find or create endpoint
+    uint8_t findOrCreateEndpoint(const String& name) {
+        // Look for existing endpoint
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == name) {
+                return i;
+            }
+        }
+        // Create new endpoint
+        endpointNames.push_back(name);
+        endpointParams.push_back({});
+        return endpointNames.size() - 1;
     }
 } // namespace
 
@@ -274,51 +293,128 @@ bool HeadlessWiFiSettingsClass::checkbox(const String &name, bool init, const St
     return x->value.toInt();
 }
 
+void HeadlessWiFiSettingsClass::markEndpoint(const String& name) {
+    currentEndpointIndex = findOrCreateEndpoint(name);
+}
+
 void HeadlessWiFiSettingsClass::markExtra() {
-    extra = true;
+    currentEndpointIndex = findOrCreateEndpoint("extra");
 }
 
 void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     begin();
 
     if (onHttpSetup) onHttpSetup(&http);
+// Handler for /settings and /settings/{name} endpoints
+http.on("/settings", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    String path = request->url();
+    String endpointName;
+    size_t endpointIndex;
 
-    http.on("/settings", HTTP_GET, [this](AsyncWebServerRequest *request) {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
-        response->print("{");
-        bool needsComma = false;
-        for (auto &p : primary) {
-            auto s = p->json();
-            if (s == "") continue;
-            if (needsComma) response->print(",");
-            response->print(s);
-            needsComma = true;
+    if (path == "/settings") {
+        endpointName = "main";
+    } else if (path.startsWith("/settings/")) {
+        endpointName = path.substring(9); // Remove "/settings/"
+    } else {
+        request->send(404);
+        return;
+    }
+
+    // Find the endpoint
+    bool found = false;
+    for (size_t i = 0; i < endpointNames.size(); i++) {
+        if (endpointNames[i] == endpointName) {
+            endpointIndex = i;
+            found = true;
+            break;
         }
-        response->print("}");
-        request->send(response);
-    });
+    }
 
-    http.on("/settings", HTTP_POST, [this](AsyncWebServerRequest *request) {
-        bool ok = true;
+    if (!found) {
+        request->send(404, "text/plain", "Endpoint not found");
+        return;
+    }
 
-        for (auto &p : primary) {
-            p->set(request->arg(p->name));
-            if (!p->store()) ok = false;
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->print("{");
+    bool needsComma = false;
+    for (auto &p : endpointParams[endpointIndex]) {
+        auto s = p->json();
+        if (s == "") continue;
+        if (needsComma) response->print(",");
+        response->print(s);
+        needsComma = true;
+    }
+    response->print("}");
+    request->send(response);
+});
+
+// Handler for /settings and /settings/{name} POST endpoints
+http.on("/settings", HTTP_POST, [this](AsyncWebServerRequest *request) {
+    String path = request->url();
+    String endpointName;
+    size_t endpointIndex;
+
+    if (path == "/settings") {
+        endpointName = "main";
+    } else if (path.startsWith("/settings/")) {
+        endpointName = path.substring(9); // Remove "/settings/"
+    } else {
+        request->send(404);
+        return;
+    }
+
+    // Find the endpoint
+    bool found = false;
+    for (size_t i = 0; i < endpointNames.size(); i++) {
+        if (endpointNames[i] == endpointName) {
+            endpointIndex = i;
+            found = true;
+            break;
         }
+    }
 
-        if (ok) {
-            request->send(200);
-            if (onConfigSaved) onConfigSaved();
-        } else {
-            request->send(500, "text/plain", "Error writing to flash filesystem");
-        }
-    });
+    if (!found) {
+        request->send(404, "text/plain", "Endpoint not found");
+        return;
+    }
 
+    bool ok = true;
+    for (auto &p : endpointParams[endpointIndex]) {
+        p->set(request->arg(p->name));
+        if (!p->store()) ok = false;
+    }
+
+    if (ok) {
+        request->send(200);
+        if (onConfigSaved) onConfigSaved();
+    } else {
+        request->send(500, "text/plain", "Error writing to flash filesystem");
+    }
+});
+
+    // Legacy /extras endpoint redirects to /settings/extra
     http.on("/extras", HTTP_GET, [this](AsyncWebServerRequest *request) {
+        // Find extra endpoint
+        size_t extraIndex = 0;
+        bool found = false;
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == "extra") {
+                extraIndex = i;
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            request->send(404, "text/plain", "Extra endpoint not found");
+            return;
+        }
+
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         response->print("{");
         bool needsComma = false;
-        for (auto &p : extras) {
+        for (auto &p : endpointParams[extraIndex]) {
             auto s = p->json();
             if (s == "") continue;
             if (needsComma) response->print(",");
@@ -329,10 +425,26 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         request->send(response);
     });
 
+    // Legacy /extras POST endpoint redirects to /settings/extra
     http.on("/extras", HTTP_POST, [this](AsyncWebServerRequest *request) {
-        bool ok = true;
+        // Find extra endpoint
+        size_t extraIndex = 0;
+        bool found = false;
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == "extra") {
+                extraIndex = i;
+                found = true;
+                break;
+            }
+        }
 
-        for (auto &p : extras) {
+        if (!found) {
+            request->send(404, "text/plain", "Extra endpoint not found");
+            return;
+        }
+
+        bool ok = true;
+        for (auto &p : endpointParams[extraIndex]) {
             p->set(request->arg(p->name));
             if (!p->store()) ok = false;
         }

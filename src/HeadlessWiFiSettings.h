@@ -14,6 +14,7 @@ class HeadlessWiFiSettingsClass {
 
         HeadlessWiFiSettingsClass();
         void markExtra();
+        void markEndpoint(const String& name);
         void begin();
         bool connect(bool portal = true, int wait_seconds = 60);
         void portal();
