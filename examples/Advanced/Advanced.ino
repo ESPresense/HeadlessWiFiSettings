@@ -111,4 +111,15 @@ curl http://YOUR_ESP_IP/settings/extra
 Update debug settings:
 curl -X POST -d "debug=1" -d "update_interval=30.5" -d "log_level=3" http://YOUR_ESP_IP/settings/extra
 
+Scan for WiFi networks:
+curl http://YOUR_ESP_IP/wifi/scan
+# Returns JSON with available networks and their signal strengths:
+# {
+#   "networks": {
+#     "MyNetwork": -65,
+#     "Neighbor1": -72,
+#     "Neighbor2": -85
+#   }
+# }
+
 */

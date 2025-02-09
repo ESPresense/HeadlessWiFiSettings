@@ -457,6 +457,56 @@ http.on("/settings", HTTP_POST, [this](AsyncWebServerRequest *request) {
         }
     });
 
+    // WiFi scan endpoint
+    http.on("/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        int numNetworks = WiFi.scanNetworks();
+        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        response->print("{\"networks\":{");
+
+        bool needsComma = false;
+        struct Network {
+            String ssid;
+            int rssi;
+        };
+        std::vector<Network> networks;
+
+        // First pass: collect all networks with their RSSI values
+        for (int i = 0; i < numNetworks; i++) {
+            String ssid = WiFi.SSID(i);
+            if (ssid.isEmpty()) continue;  // Skip hidden networks
+
+            int rssi = WiFi.RSSI(i);
+            bool found = false;
+
+            // Update existing network if we've seen it before
+            for (auto& network : networks) {
+                if (network.ssid == ssid) {
+                    if (rssi > network.rssi) {
+                        network.rssi = rssi;  // Keep the highest RSSI value
+                    }
+                    found = true;
+                    break;
+                }
+            }
+
+            // Add new network if we haven't seen it
+            if (!found) {
+                networks.push_back({ssid, rssi});
+            }
+        }
+
+        // Second pass: output the networks with their highest RSSI values
+        for (const auto& network : networks) {
+            if (needsComma) response->print(",");
+            response->printf("\"%s\":%d", json_encode(network.ssid).c_str(), network.rssi);
+            needsComma = true;
+        }
+
+        response->print("}}");
+        request->send(response);
+        WiFi.scanDelete();
+    });
+
     http.onNotFound([this](AsyncWebServerRequest *request) {
         request->send(404, "text/plain", "404");
     });
