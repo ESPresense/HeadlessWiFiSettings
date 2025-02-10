@@ -357,7 +357,7 @@ void HeadlessWiFiSettingsClass::markEndpoint(const String& name) {
 }
 
 void HeadlessWiFiSettingsClass::markExtra() {
-    currentEndpointIndex = findOrCreateEndpoint("extra");
+    currentEndpointIndex = findOrCreateEndpoint("extras");
 }
 
 void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {

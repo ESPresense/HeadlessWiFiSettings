@@ -52,7 +52,7 @@ void setup() {
 
 The library provides two main endpoints for configuration:
 
-### /settings
+### /wifi/main
 
 This endpoint handles the primary configuration parameters.
 
@@ -67,7 +67,7 @@ Example response:
 }
 ```
 
-### /extras
+### /wifi/extras
 
 This endpoint handles additional parameters marked with `markExtra()`.
 
