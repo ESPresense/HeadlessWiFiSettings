@@ -382,6 +382,8 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     // Get dropdown options endpoint
     http.on("/wifi/options/", HTTP_GET, [this](AsyncWebServerRequest *request) {
         String path = request->url();
+        Serial.print("GET ");
+        Serial.println(path);
 
         String paramName = path.substring(13); // Remove "/wifi/options/"
 
@@ -417,6 +419,10 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     });
 
     http.on("/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String path = request->url();
+        Serial.print("GET ");
+        Serial.println(path);
+
         int numNetworks = WiFi.scanNetworks();
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         response->print("{\"networks\":{");
@@ -468,6 +474,8 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     // Handler for /wifi/{name} endpoints
     http.on("/wifi", HTTP_GET, [this](AsyncWebServerRequest *request) {
         String path = request->url();
+        Serial.print("GET ");
+        Serial.println(path);
         String endpointName;
         size_t endpointIndex;
 
@@ -527,6 +535,9 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     // Handler for /wifi/{name} POST endpoints
     http.on("/wifi", HTTP_POST, [this](AsyncWebServerRequest *request) {
         String path = request->url();
+        Serial.print("POST ");
+        Serial.println(path);
+
         String endpointName;
         size_t endpointIndex;
 
@@ -569,6 +580,9 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     });
 
     http.onNotFound([this, &redirect](AsyncWebServerRequest *request) {
+        String path = request->url();
+        Serial.print("GET ");
+        Serial.println(path);
         if (redirect(request)) return;
         request->send(404, "text/plain", "404");
     });
