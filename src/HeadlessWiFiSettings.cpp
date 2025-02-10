@@ -363,7 +363,21 @@ void HeadlessWiFiSettingsClass::markExtra() {
 void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     begin();
 
+    static bool const configureWifi = wifi;
+    static String ip = WiFi.softAPIP().toString();
+
     if (onHttpSetup) onHttpSetup(&http);
+
+    auto redirect = [](AsyncWebServerRequest *request) {
+        if (!configureWifi) return false;
+        // iPhone doesn't deal well with redirects to http://hostname/ and
+        // will wait 40 to 60 seconds before succesful retry. Works flawlessly
+        // with http://ip/ though.
+        if (request->host() == ip) return false;
+
+        request->redirect("http://" + ip + "/");
+        return true;
+    };
 
     // Get dropdown options endpoint
     http.on("/wifi/options/", HTTP_GET, [this](AsyncWebServerRequest *request) {
@@ -554,7 +568,8 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         }
     });
 
-    http.onNotFound([this](AsyncWebServerRequest *request) {
+    http.onNotFound([this, &redirect](AsyncWebServerRequest *request) {
+        if (redirect(request)) return;
         request->send(404, "text/plain", "404");
     });
 
