@@ -76,7 +76,8 @@ namespace { // Helpers
 
         virtual void set(const String &) = 0;
 
-        virtual String json() = 0;
+        virtual String jsonValue() = 0;
+        virtual String jsonDefault() = 0;
     };
 
     struct HeadlessWiFiSettingsDropdown : HeadlessWiFiSettingsParameter {
@@ -84,11 +85,19 @@ namespace { // Helpers
 
         std::vector<String> options;
 
-        String json() {
+        String jsonValue() {
             if (value == "") return "";
             String j = F("\"{name}\":\"{value}\"");
             j.replace("{name}", json_encode(name));
             j.replace("{value}", json_encode(value));
+            return j;
+        }
+
+        String jsonDefault() {
+            if (init == "") return "";
+            String j = F("\"{name}\":\"{value}\"");
+            j.replace("{name}", json_encode(name));
+            j.replace("{value}", json_encode(init));
             return j;
         }
     };
@@ -96,11 +105,19 @@ namespace { // Helpers
     struct HeadlessWiFiSettingsString : HeadlessWiFiSettingsParameter {
         virtual void set(const String &v) { value = v; }
 
-        String json() {
+        String jsonValue() {
             if (value == "") return "";
             String j = F("\"{name}\":\"{value}\"");
             j.replace("{name}", json_encode(name));
             j.replace("{value}", json_encode(value));
+            return j;
+        }
+
+        String jsonDefault() {
+            if (init == "") return "";
+            String j = F("\"{name}\":\"{value}\"");
+            j.replace("{name}", json_encode(name));
+            j.replace("{value}", json_encode(init));
             return j;
         }
     };
@@ -111,20 +128,36 @@ namespace { // Helpers
             trimmed.trim();
             if (trimmed.length()) value = trimmed;
         }
+String jsonValue() {
+    return ""; // Don't expose password values
+}
 
-        String json() {
-            return "";
+String jsonDefault() {
+    if (init == "") return "";
+    String j = F("\"{name}\":\"{value}\"");
+    j.replace("{name}", json_encode(name));
+    j.replace("{value}", json_encode(init));
+    return j;
+}
         }
     };
 
     struct HeadlessWiFiSettingsInt : HeadlessWiFiSettingsParameter {
         virtual void set(const String &v) { value = v; }
 
-        String json() {
+        String jsonValue() {
             if (value == "") return "";
-            String j = F("\"{name}\":\"{value}\"");
+            String j = F("\"{name}\":{value}");
             j.replace("{name}", json_encode(name));
             j.replace("{value}", String(value.toInt()));
+            return j;
+        }
+
+        String jsonDefault() {
+            if (init == "") return "";
+            String j = F("\"{name}\":{value}");
+            j.replace("{name}", json_encode(name));
+            j.replace("{value}", String(init.toInt()));
             return j;
         }
     };
@@ -132,11 +165,19 @@ namespace { // Helpers
     struct HeadlessWiFiSettingsFloat : HeadlessWiFiSettingsParameter {
         virtual void set(const String &v) { value = v; }
 
-        String json() {
+        String jsonValue() {
             if (value == "") return "";
             String j = F("\"{name}\":{value}");
             j.replace("{name}", json_encode(name));
             j.replace("{value}", String(value.toFloat()));
+            return j;
+        }
+
+        String jsonDefault() {
+            if (init == "") return "";
+            String j = F("\"{name}\":{value}");
+            j.replace("{name}", json_encode(name));
+            j.replace("{value}", String(init.toFloat()));
             return j;
         }
     };
@@ -144,11 +185,19 @@ namespace { // Helpers
     struct HeadlessWiFiSettingsBool : HeadlessWiFiSettingsParameter {
         virtual void set(const String &v) { value = v.length() ? "1" : "0"; }
 
-        String json() {
+        String jsonValue() {
             if (value == "") return "";
             String j = F("\"{name}\":{value}");
             j.replace("{name}", json_encode(name));
             j.replace("{value}", value.toInt() ? "true" : "false");
+            return j;
+        }
+
+        String jsonDefault() {
+            if (init == "") return "";
+            String j = F("\"{name}\":{value}");
+            j.replace("{name}", json_encode(name));
+            j.replace("{value}", init.toInt() ? "true" : "false");
             return j;
         }
     };
@@ -413,15 +462,30 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
 
         AsyncResponseStream *response = request->beginResponseStream("application/json");
         response->print("{");
+
+        // Output current values
+        response->print("\"values\":{");
         bool needsComma = false;
         for (auto &p : endpointParams[endpointIndex]) {
-            auto s = p->json();
+            auto s = p->jsonValue();
             if (s == "") continue;
             if (needsComma) response->print(",");
             response->print(s);
             needsComma = true;
         }
         response->print("}");
+
+        // Output defaults
+        response->print(",\"defaults\":{");
+        needsComma = false;
+        for (auto &p : endpointParams[endpointIndex]) {
+            auto s = p->jsonDefault();
+            if (s == "") continue;
+            if (needsComma) response->print(",");
+            response->print(s);
+            needsComma = true;
+        }
+        response->print("}}");
         request->send(response);
     });
 
