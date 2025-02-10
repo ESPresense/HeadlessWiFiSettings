@@ -136,24 +136,25 @@ namespace { // Helpers
         }
     };
 
+    static const char* const MASKED_PASSWORD = "***###***";
+
     struct HeadlessWiFiSettingsPassword : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsPassword() { type = ParamType::Password; }
         virtual void set(const String &v) {
-            String trimmed = v;
-            trimmed.trim();
-            if (trimmed.length()) value = trimmed;
+            if (v == MASKED_PASSWORD) return;
+            value = v;
         }
 
         String jsonValue() {
-            return ""; // Don't expose password values
+            if (!value.length()) return "";
+            String j = F("\"{name}\":\"{value}\"");
+            j.replace("{name}", json_encode(name));
+            j.replace("{value}", json_encode(MASKED_PASSWORD));
+            return j;
         }
 
         String jsonDefault() {
-            if (init == "") return "";
-            String j = F("\"{name}\":\"{value}\"");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", json_encode(init));
-            return j;
+            return "";
         }
     };  // HeadlessWiFiSettingsPassword
 
