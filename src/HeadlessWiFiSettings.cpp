@@ -12,6 +12,7 @@
 #include <limits.h>
 
 #include <vector>
+#include "json_utils.h"
 
 #define Sprintf(f, ...) ({ char* s; asprintf(&s, f, __VA_ARGS__); String r = s; free(s); r; })
 
@@ -31,29 +32,6 @@ namespace { // Helpers
         auto w = f.print(content);
         f.close();
         return w == content.length();
-    }
-
-    String json_encode(const String &raw) {
-        String r;
-        for (unsigned int i = 0; i < raw.length(); i++) {
-            char c = raw.charAt(i);
-            switch (c) {
-                case '\"': r += "\\\""; break;
-                case '\\': r += "\\\\"; break;
-                case '\b': r += "\\b"; break;
-                case '\f': r += "\\f"; break;
-                case '\n': r += "\\n"; break;
-                case '\r': r += "\\r"; break;
-                case '\t': r += "\\t"; break;
-                default:
-                    if (c < ' ' || c > '~') {
-                        r += Sprintf("\\u%04x", c);
-                    } else {
-                        r += c;
-                    }
-            }
-        }
-        return r;
     }
 
     enum class ParamType {
@@ -406,7 +384,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
             return;
         }
 
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        AsyncResponseStream *response = request->beginResponseStream("application/json; charset=utf-8");
         response->print("[");
         bool needsComma = false;
         for (const auto& option : dropdown->options) {
@@ -424,7 +402,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.println(path);
 
         int numNetworks = WiFi.scanNetworks();
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        AsyncResponseStream *response = request->beginResponseStream("application/json; charset=utf-8");
         response->print("{\"networks\":{");
 
         bool needsComma = false;
@@ -503,7 +481,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
             return;
         }
 
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        AsyncResponseStream *response = request->beginResponseStream("application/json; charset=utf-8");
         response->print("{");
 
         // Output current values
