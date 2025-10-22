@@ -338,6 +338,29 @@ void HeadlessWiFiSettingsClass::markExtra() {
     currentEndpointIndex = findOrCreateEndpoint("extras");
 }
 
+void HeadlessWiFiSettingsClass::beginSerialImprov(const char* firmwareName, const char* version, const char* deviceName) {
+    begin();
+    if (improv) {
+        delete improv;
+        improv = nullptr;
+    }
+    const char* chip = "ESP32";
+    const char* name = (deviceName && deviceName[0]) ? deviceName : hostname.c_str();
+    improv = new ImprovWiFi(firmwareName, version, chip, name);
+    improv->setInfoCallback([](const char* msg) { Serial.println(msg); });
+    improv->setDebugCallback([](const char* msg) { Serial.println(msg); });
+    improv->setWiFiCallback([this](const char* ssid, const char* password) {
+        spurt("/wifi-ssid", ssid);
+        spurt("/wifi-password", password);
+        if (onConfigSaved) onConfigSaved();
+        connect(false);
+    });
+}
+
+void HeadlessWiFiSettingsClass::serialImprovLoop() {
+    if (improv) improv->loop();
+}
+
 void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     begin();
 
