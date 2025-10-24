@@ -41,6 +41,11 @@ bool ImprovWiFi::onCommandCallback(ImprovTypes::ImprovCommand cmd)
   {
   case ImprovTypes::Command::GET_CURRENT_STATE:
   {
+    if (onImprovIdentifyCallback)
+    {
+      onImprovIdentifyCallback();
+    }
+
     if (isConnected())
     {
       setState(ImprovTypes::State::STATE_PROVISIONED);
@@ -176,6 +181,11 @@ void ImprovWiFi::onImprovError(OnImprovError *errorCallback)
 void ImprovWiFi::onImprovConnected(OnImprovConnected *connectedCallback)
 {
   onImprovConnectedCallback = connectedCallback;
+}
+
+void ImprovWiFi::onImprovIdentify(OnImprovIdentify *identifyCallback)
+{
+  onImprovIdentifyCallback = identifyCallback;
 }
 
 void ImprovWiFi::setCustomConnectWiFi(CustomConnectWiFi *connectWiFiCallBack)

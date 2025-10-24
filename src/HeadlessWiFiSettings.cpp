@@ -14,6 +14,27 @@
 #include <vector>
 #include "json_utils.h"
 
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
+namespace {
+    HeadlessWiFiSettingsClass* g_headlessImprovInstance = nullptr;
+
+    ImprovTypes::ChipFamily detectChipFamily() {
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+        return ImprovTypes::ChipFamily::CF_ESP32_C3;
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
+        return ImprovTypes::ChipFamily::CF_ESP32_S2;
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+        return ImprovTypes::ChipFamily::CF_ESP32_S3;
+#elif defined(ARDUINO_ARCH_ESP8266)
+        return ImprovTypes::ChipFamily::CF_ESP8266;
+#else
+        return ImprovTypes::ChipFamily::CF_ESP32;
+#endif
+    }
+
+}
+#endif
+
 #define Sprintf(f, ...) ({ char* s; asprintf(&s, f, __VA_ARGS__); String r = s; free(s); r; })
 
 namespace { // Helpers
@@ -568,6 +589,66 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     http.begin();
 }
 
+void HeadlessWiFiSettingsClass::beginSerialImprov(const String& firmwareName,
+                                                  const String& firmwareVersion,
+                                                  const String& deviceName,
+                                                  Stream* serial,
+                                                  const String& deviceUrl) {
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
+    begin();
+
+    Stream* targetStream = serial ? serial : &Serial;
+    if (!targetStream) {
+        Serial.println(F("SerialImprov requires a valid Stream instance"));
+        return;
+    }
+
+    if (improv) {
+        delete improv;
+        improv = nullptr;
+    }
+
+    improvSerial = targetStream;
+    improv = new ImprovWiFi(targetStream);
+    g_headlessImprovInstance = this;
+    improv->setCustomConnectWiFi(&improvConnectTrampoline);
+#if defined(IMPROV_WIFI_LIBRARY_HAS_IDENTIFY_CALLBACK)
+    improv->onImprovIdentify(&improvIdentifyTrampoline);
+#endif
+
+    String resolvedName = deviceName.length() ? deviceName : hostname;
+    if (!resolvedName.length()) resolvedName = firmwareName;
+
+    if (deviceUrl.length()) {
+        improv->setDeviceInfo(detectChipFamily(),
+                              firmwareName.c_str(),
+                              firmwareVersion.c_str(),
+                              resolvedName.c_str(),
+                              deviceUrl.c_str());
+    } else {
+        improv->setDeviceInfo(detectChipFamily(),
+                              firmwareName.c_str(),
+                              firmwareVersion.c_str(),
+                              resolvedName.c_str());
+    }
+#else
+    (void)firmwareName;
+    (void)firmwareVersion;
+    (void)deviceName;
+    (void)serial;
+    (void)deviceUrl;
+    Serial.println(F("SerialImprov support unavailable (ImprovWiFiLibrary missing)"));
+#endif
+}
+
+void HeadlessWiFiSettingsClass::serialImprovLoop() {
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
+    if (improv) {
+        improv->handleSerial();
+    }
+#endif
+}
+
 void HeadlessWiFiSettingsClass::portal() {
     begin();
 
@@ -625,7 +706,10 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
     String pw = slurp("/wifi-password");
     if (ssid.length() == 0) {
         Serial.println(F("First contact!\n"));
-        this->portal();
+        if (portal) {
+            this->portal();
+        }
+        return false;
     }
 
     Serial.print(F("Connecting to WiFi SSID '"));
@@ -665,6 +749,49 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
     if (onSuccess) onSuccess();
     return true;
 }
+
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
+bool HeadlessWiFiSettingsClass::handleImprovCredentials(const char* ssid, const char* password) {
+    begin();
+    if (!ssid || !ssid[0]) {
+        Serial.println(F("Improv: SSID missing"));
+        return false;
+    }
+
+    if (!spurt("/wifi-ssid", String(ssid))) {
+        Serial.println(F("Improv: Failed to save SSID"));
+        return false;
+    }
+
+    if (!spurt("/wifi-password", password ? String(password) : "")) {
+        Serial.println(F("Improv: Failed to save password"));
+        return false;
+    }
+
+    if (onConfigSaved) onConfigSaved();
+    return connect(false);
+}
+
+void HeadlessWiFiSettingsClass::handleImprovIdentify() {
+    if (onImprovIdentify) {
+        onImprovIdentify();
+    }
+}
+
+bool HeadlessWiFiSettingsClass::improvConnectTrampoline(const char* ssid, const char* password) {
+    return g_headlessImprovInstance ?
+           g_headlessImprovInstance->handleImprovCredentials(ssid, password) :
+           false;
+}
+
+#if defined(IMPROV_WIFI_LIBRARY_HAS_IDENTIFY_CALLBACK)
+void HeadlessWiFiSettingsClass::improvIdentifyTrampoline() {
+    if (g_headlessImprovInstance) {
+        g_headlessImprovInstance->handleImprovIdentify();
+    }
+}
+#endif
+#endif
 
 void HeadlessWiFiSettingsClass::begin() {
     if (begun) return;

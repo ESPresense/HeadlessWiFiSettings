@@ -15,6 +15,8 @@
   #include <Arduino.h>
 #endif
 
+#define IMPROV_WIFI_LIBRARY_HAS_IDENTIFY_CALLBACK 1
+
 /**
  * Improv WiFi class
  *
@@ -99,6 +101,11 @@ public:
   typedef void(OnImprovConnected)(const char *ssid, const char *password);
 
   /**
+   * Callback invoked when an IDENTIFY request is received.
+   */
+  typedef void(OnImprovIdentify)();
+
+  /**
    * Callback function to customize the wifi connection if you needed. Optional.
    */
   typedef bool(CustomConnectWiFi)(const char *ssid, const char *password);
@@ -140,6 +147,11 @@ public:
   void onImprovConnected(OnImprovConnected *connectedCallback);
 
   /**
+   * Method to set the typedef OnImprovIdentify callback.
+   */
+  void onImprovIdentify(OnImprovIdentify *identifyCallback);
+
+  /**
    * Method to set the typedef CustomConnectWiFi callback.
    */
   void setCustomConnectWiFi(CustomConnectWiFi *connectWiFiCallBack);
@@ -166,4 +178,5 @@ private:
   OnImprovError *onImproErrorCallback;
   OnImprovConnected *onImprovConnectedCallback;
   CustomConnectWiFi *customConnectWiFiCallback;
+  OnImprovIdentify *onImprovIdentifyCallback = nullptr;
 };
