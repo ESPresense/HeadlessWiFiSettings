@@ -2,11 +2,22 @@
 
 ## 🔴 Issues Found in Original PR
 
+### Issue 1: Incorrect Library Name
 The original PR has an **incorrect dependency name**:
 - ❌ Wrong: `judge2005/ImprovWiFi` (doesn't exist)
 - ✅ Correct: `jnthas/Improv WiFi Library`
 
-This has been fixed in the examples on this branch.
+### Issue 2: Wrong WiFi Library
+The Improv WiFi Library dependency pulls in the **wrong WiFi library**:
+- ❌ It installs `WiFi` (Arduino WiFi shield library)
+- ✅ ESP32 uses built-in WiFi from the framework
+
+### Issue 3: Missing ESPAsyncWebServer
+The example platformio.ini was missing explicit dependencies:
+- ❌ Missing: ESPAsyncWebServer and AsyncTCP
+- ✅ Fixed: Now explicitly listed in lib_deps
+
+All of these have been fixed in the examples on this branch.
 
 ## ✅ Fixed! Follow These Steps
 
@@ -28,14 +39,23 @@ pip install pyserial
 git pull origin claude/test-home-assistant-support-011CUQuhAg8kMME5diE5fLBs
 ```
 
-### 3. Build the Example
+### 3. Clean and Build the Example
 
 ```bash
 cd examples/ImprovWithHTTP
+
+# Clean previous build artifacts (important!)
+pio run -t clean
+
+# Build fresh
 pio run
 ```
 
-This should now work! PlatformIO will automatically download the correct library.
+This should now work! PlatformIO will:
+- Download the correct Improv WiFi Library
+- Install ESPAsyncWebServer and AsyncTCP
+- Ignore the wrong WiFi library
+- Use ESP32's built-in WiFi instead
 
 ### 4. Flash and Test
 
@@ -67,11 +87,34 @@ lib_deps =
     jnthas/Improv WiFi Library
 ```
 
+### Issue 2: Wrong WiFi Library ✅ FIXED
+
+**Errors:**
+```
+error: invalid conversion from 'const char*' to 'char*'
+error: 'WIFI_AUTH_OPEN' was not declared in this scope
+fatal error: ESPAsyncWebServer.h: No such file or directory
+```
+
+**Root Cause:**
+The Improv WiFi Library declares a dependency on `WiFi` library, which causes PlatformIO to install the **Arduino WiFi shield library** instead of using ESP32's built-in WiFi. These are incompatible.
+
+**Fix:**
+```ini
+lib_deps =
+    file://../../
+    jnthas/Improv WiFi Library
+    me-no-dev/ESP Async WebServer  # Add explicitly
+    me-no-dev/AsyncTCP              # Add explicitly
+
+lib_ignore = WiFi  # Ignore wrong WiFi library
+```
+
 **Files changed:**
 - `examples/ImprovWithHTTP/platformio.ini`
 - `examples/SerialImprov/platformio.ini`
 
-### Issue 2: Missing Python Module ✅ FIXED
+### Issue 3: Missing Python Module ✅ FIXED
 
 **Error:**
 ```
