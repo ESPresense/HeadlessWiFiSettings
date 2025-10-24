@@ -4,11 +4,10 @@
 void setup() {
     Serial.begin(115200);
     SPIFFS.begin(true);
-    HeadlessWiFiSettings.beginSerialImprov("HeadlessWiFiSettings", "1.0");
+    HeadlessWiFiSettings.startImprovSerial("HeadlessWiFiSettings", "1.0");
     HeadlessWiFiSettings.connect();
 }
 
 void loop() {
-    HeadlessWiFiSettings.serialImprovLoop();
+    HeadlessWiFiSettings.loop();
 }
-

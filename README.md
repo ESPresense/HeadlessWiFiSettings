@@ -57,14 +57,24 @@ Initialise the serial handler and call the loop handler from your main loop:
 void setup() {
     Serial.begin(115200);
     SPIFFS.begin(true);
-    HeadlessWiFiSettings.beginSerialImprov("HeadlessWiFiSettings", "1.0");
+    HeadlessWiFiSettings.startImprovSerial("HeadlessWiFiSettings", "1.0");
     HeadlessWiFiSettings.connect();
 }
 
 void loop() {
-    HeadlessWiFiSettings.serialImprovLoop();
+    HeadlessWiFiSettings.loop();
 }
 ```
+
+To exercise the Serial Improv protocol over USB without a GUI, install `pyserial`
+(`python3 -m pip install --user pyserial`) and run the helper script:
+
+```bash
+python3 examples/SerialImprov/test_improv.py /dev/cu.usbserial-54F70151721 MyWiFi MyPassword
+```
+
+Leave the SSID/password arguments off if you only want to send IDENTIFY/GET
+STATE RPCs.
 
 ## JSON Endpoints
 

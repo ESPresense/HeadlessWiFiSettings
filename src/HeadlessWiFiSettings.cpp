@@ -10,6 +10,10 @@
 #include <esp_task_wdt.h>
 #include <esp_wifi.h>
 #include <limits.h>
+#if defined(ARDUINO_ARCH_ESP32)
+#include <sdkconfig.h>
+#endif
+#include <cstring>
 
 #include <vector>
 #include "json_utils.h"
@@ -338,15 +342,32 @@ void HeadlessWiFiSettingsClass::markExtra() {
     currentEndpointIndex = findOrCreateEndpoint("extras");
 }
 
-void HeadlessWiFiSettingsClass::beginSerialImprov(const char* firmwareName, const char* version, const char* deviceName) {
+namespace {
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+constexpr const char* defaultChipFamily = "ESP32-C3";
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
+constexpr const char* defaultChipFamily = "ESP32-S2";
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+constexpr const char* defaultChipFamily = "ESP32-S3";
+#elif defined(CONFIG_IDF_TARGET_ESP32)
+constexpr const char* defaultChipFamily = "ESP32";
+#elif defined(ARDUINO_ARCH_ESP8266)
+constexpr const char* defaultChipFamily = "ESP8266";
+#else
+constexpr const char* defaultChipFamily = "ESP32";
+#endif
+}
+
+void HeadlessWiFiSettingsClass::startImprovSerial(const String& firmware, const String& version, const String& chipFamily) {
     begin();
     if (improv) {
         delete improv;
         improv = nullptr;
     }
-    const char* chip = "ESP32";
-    const char* name = (deviceName && deviceName[0]) ? deviceName : hostname.c_str();
-    improv = new ImprovWiFi(firmwareName, version, chip, name);
+    improvFirmware = firmware;
+    improvVersion = version;
+    const char* chip = chipFamily.length() ? chipFamily.c_str() : defaultChipFamily;
+    improv = new ImprovWiFi(improvFirmware.c_str(), improvVersion.c_str(), chip, hostname.c_str());
     improv->setInfoCallback([](const char* msg) { Serial.println(msg); });
     improv->setDebugCallback([](const char* msg) { Serial.println(msg); });
     improv->setWiFiCallback([this](const char* ssid, const char* password) {
@@ -357,7 +378,7 @@ void HeadlessWiFiSettingsClass::beginSerialImprov(const char* firmwareName, cons
     });
 }
 
-void HeadlessWiFiSettingsClass::serialImprovLoop() {
+void HeadlessWiFiSettingsClass::loop() {
     if (improv) improv->loop();
 }
 
@@ -623,6 +644,7 @@ void HeadlessWiFiSettingsClass::portal() {
     int desired = 0;
     for (;;) {
         dns.processNextRequest();
+        loop();
         if (onPortalWaitLoop && (millis() - starttime) > desired) {
             desired = onPortalWaitLoop();
             starttime = millis();
@@ -672,6 +694,7 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
             Serial.print(".");
             status = WiFi.status();
         }
+        loop();
         delay(onWaitLoop ? onWaitLoop() : 100);
         if (wait_seconds >= 0 && millis() - starttime > wait_ms)
             break;
