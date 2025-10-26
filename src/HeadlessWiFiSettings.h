@@ -56,6 +56,7 @@ class HeadlessWiFiSettingsClass {
     ImprovWiFi *improv = nullptr;
     String improvFirmware;
     String improvVersion;
+    String improvChip;
 };
 
 extern HeadlessWiFiSettingsClass HeadlessWiFiSettings;

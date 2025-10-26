@@ -7,3 +7,4 @@ cmake-build-*
 CMakeLists.txt
 CMakeListsPrivate.txt
 .DS_Store
+.env

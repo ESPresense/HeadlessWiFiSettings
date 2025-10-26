@@ -11,8 +11,10 @@ prints any responses.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
+from pathlib import Path
 from typing import List, Tuple
 
 import serial
@@ -49,6 +51,20 @@ ERROR_NAMES = {
     0x04: "NOT_AUTHORIZED",
     0xFF: "UNKNOWN",
 }
+
+
+def load_env_file(filename: str = ".env") -> None:
+    path = Path(filename)
+    if not path.exists():
+        return
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
 
 
 def checksum(data: bytes) -> int:
@@ -172,6 +188,14 @@ def read_for(
         data = ser.read(ser.in_waiting or 1)
         if data:
             buffer.extend(data)
+            if b"IMPROV" not in data:
+                try:
+                    sys.stdout.write(data.decode(errors="ignore"))
+                    sys.stdout.flush()
+                except Exception:
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.flush()
+            sys.stdout.write(data.decode(errors="ignore"))
             packets = parse_packets(buffer)
             if packets:
                 captured.extend(packets)
@@ -198,17 +222,26 @@ def wait_for_provisioned(ser: serial.Serial, buffer: bytearray, timeout: float) 
 
 
 def main() -> int:
+    load_env_file()
     parser = argparse.ArgumentParser(description="SerialImprov exerciser")
     parser.add_argument("port", help="Serial port, e.g. /dev/cu.usbserial-XXXX")
-    parser.add_argument("ssid", nargs="?", help="Optional Wi-Fi SSID")
-    parser.add_argument("password", nargs="?", default="", help="Optional Wi-Fi password")
+    parser.add_argument("ssid", nargs="?", help="Wi-Fi SSID (optional if SERIAL_IMPROV_SSID env set)")
+    parser.add_argument("password", nargs="?", default="", help="Wi-Fi password (optional if SERIAL_IMPROV_PASSWORD env set)")
     parser.add_argument("--no-reset", action="store_true", help="Skip toggling DTR/RTS on open")
     args = parser.parse_args()
 
+    port = args.port or os.environ.get("SERIAL_IMPROV_PORT")
+    if not port:
+        print("No serial port provided (argument or SERIAL_IMPROV_PORT env required).")
+        return 1
+
+    ssid = args.ssid if args.ssid is not None else os.environ.get("SERIAL_IMPROV_SSID")
+    password = args.password if args.password else os.environ.get("SERIAL_IMPROV_PASSWORD", "")
+
     try:
-        ser = serial.Serial(args.port, 115200, timeout=0.1)
+        ser = serial.Serial(port, 115200, timeout=0.1)
     except serial.SerialException as err:
-        print(f"Could not open {args.port}: {err}")
+        print(f"Could not open {port}: {err}")
         return 1
 
     if not args.no_reset:
@@ -235,10 +268,10 @@ def main() -> int:
     ser.write(current_state_packet())
     read_for(ser, 1.0, buffer)
 
-    if args.ssid is not None:
-        print(f"Sending Wi-Fi credentials for '{args.ssid}'")
-        ser.write(wifi_packet(args.ssid, args.password))
-        if not wait_for_provisioned(ser, buffer, timeout=45.0):
+    if ssid is not None:
+        print(f"Sending Wi-Fi credentials for '{ssid}'")
+        ser.write(wifi_packet(ssid, password))
+        if not wait_for_provisioned(ser, buffer, timeout=60.0):
             ser.close()
             return 2
 
