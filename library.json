@@ -19,6 +19,9 @@
           "name": "me-no-dev/ESP Async WebServer",
           "version": ">=1.2.3",
           "platforms": "espressif32"
+        },
+        {
+          "name": "judge2005/ImprovWiFi"
         }
       ]
 }
