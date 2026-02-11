@@ -572,7 +572,10 @@ void HeadlessWiFiSettingsClass::portal() {
     begin();
 
     // Just disconnect and set AP mode, no need to scan since we have /wifi/scan endpoint
-    WiFi.disconnect(true, true);
+    // Only disconnect if STA was started (avoids error on ESP32-C6)
+    if (WiFi.getMode() & WIFI_STA) {
+        WiFi.disconnect(true, true);
+    }
     WiFi.mode(WIFI_AP);
 
     Serial.println(F("Starting access point for configuration portal."));
