@@ -604,7 +604,10 @@ void HeadlessWiFiSettingsClass::portal() {
             desired = onPortalWaitLoop();
             starttime = millis();
         }
-        esp_task_wdt_reset();
+        // Guard WDT reset to avoid "task not found" spam on ESP32 core 3.x
+        if (esp_task_wdt_status(NULL) == ESP_OK) {
+            esp_task_wdt_reset();
+        }
         delay(1);
     }
 }
