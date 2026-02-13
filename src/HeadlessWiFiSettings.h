@@ -6,6 +6,17 @@
 
 #include <ESPAsyncWebServer.h>
 
+#if defined(__has_include)
+#  if __has_include(<ImprovWiFiLibrary.h>)
+#    include <ImprovWiFiLibrary.h>
+#    define HEADLESS_WIFI_SETTINGS_HAS_IMPROV 1
+#  else
+#    define HEADLESS_WIFI_SETTINGS_HAS_IMPROV 0
+#  endif
+#else
+#  define HEADLESS_WIFI_SETTINGS_HAS_IMPROV 0
+#endif
+
 class HeadlessWiFiSettingsClass {
     public:
         typedef std::function<void(void)> TCallback;
@@ -19,6 +30,12 @@ class HeadlessWiFiSettingsClass {
         bool connect(bool portal = true, int wait_seconds = 60);
         void portal();
         void httpSetup(bool softAP = false);
+        void beginSerialImprov(const String& firmwareName,
+                               const String& firmwareVersion,
+                               const String& deviceName = "",
+                               Stream* serial = nullptr,
+                               const String& deviceUrl = "");
+        void serialImprovLoop();
         String string(const String &name, const String &init = "", const String &label = "");
         String string(const String& name, unsigned int max_length, const String& init = "", const String& label = "");
         String string(const String& name, unsigned int min_length, unsigned int max_length, const String& init = "", const String& label = "");
@@ -45,10 +62,21 @@ class HeadlessWiFiSettingsClass {
         TCallback onConfigSaved;
         TCallback onRestart;
         TCallbackReturnsInt onPortalWaitLoop;
+        TCallback onImprovIdentify;
     private:
         AsyncWebServer http;
         bool begun = false;
         bool httpBegun = false;
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
+        ImprovWiFi* improv = nullptr;
+        Stream* improvSerial = nullptr;
+        bool handleImprovCredentials(const char* ssid, const char* password);
+        void handleImprovIdentify();
+        static bool improvConnectTrampoline(const char* ssid, const char* password);
+#if defined(IMPROV_WIFI_LIBRARY_HAS_IDENTIFY_CALLBACK)
+        static void improvIdentifyTrampoline();
+#endif
+#endif
 };
 
 extern HeadlessWiFiSettingsClass HeadlessWiFiSettings;
