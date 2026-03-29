@@ -57,12 +57,12 @@ Initialise the serial handler and call the loop handler from your main loop:
 void setup() {
     Serial.begin(115200);
     SPIFFS.begin(true);
-    HeadlessWiFiSettings.startImprovSerial("HeadlessWiFiSettings", "1.0");
+    HeadlessWiFiSettings.beginSerialImprov("HeadlessWiFiSettings", "1.0");
     HeadlessWiFiSettings.connect();
 }
 
 void loop() {
-    HeadlessWiFiSettings.loop();
+    HeadlessWiFiSettings.serialImprovLoop();
 }
 ```
 
@@ -108,7 +108,7 @@ curl -X POST http://192.168.4.1/wifi \
 The library supports the [Improv Wi-Fi serial protocol](https://improv-wifi.com/) for provisioning over USB serial:
 
 ```C++
-HeadlessWiFiSettings.startImprovSerial("MyDevice", "1.0");
+HeadlessWiFiSettings.beginSerialImprov("MyDevice", "1.0");
 ```
 
 You can then use any Improv-compatible tool or the included Python script:
@@ -292,7 +292,7 @@ void setup() {
     };
 
     // Enable Serial Improv for USB provisioning
-    HeadlessWiFiSettings.startImprovSerial("MyDevice", "1.0.0");
+    HeadlessWiFiSettings.beginSerialImprov("MyDevice", "1.0.0");
 
     // Connect to WiFi (30 second timeout, show portal on failure)
     HeadlessWiFiSettings.connect(true, 30);
@@ -306,7 +306,7 @@ void setup() {
 
 void loop() {
     // Process Serial Improv messages
-    HeadlessWiFiSettings.loop();
+    HeadlessWiFiSettings.serialImprovLoop();
 
     // Your application code here
     delay(100);
@@ -471,18 +471,22 @@ void markExtra();
 
 Convenience function that switches to the "extras" endpoint. Equivalent to `markEndpoint("extras")`.
 
-#### HeadlessWiFiSettings.startImprovSerial(...)
+#### HeadlessWiFiSettings.beginSerialImprov(...)
 
 ```C++
-void startImprovSerial(String firmware, String version, String chip = "");
+void beginSerialImprov(const String& firmwareName,
+                       const String& firmwareVersion,
+                       const String& deviceName = "",
+                       Stream* serial = nullptr,
+                       const String& deviceUrl = "");
 ```
 
-Enables the Improv Wi-Fi serial protocol for provisioning over USB. The firmware name, version, and optionally chip family are advertised to provisioning tools.
+Enables the Improv Wi-Fi serial protocol for provisioning over USB. The firmware name, version, and optionally device name, serial stream, and device URL are advertised to provisioning tools.
 
-#### HeadlessWiFiSettings.loop()
+#### HeadlessWiFiSettings.serialImprovLoop()
 
 ```C++
-void loop();
+void serialImprovLoop();
 ```
 
 Processes Improv serial protocol messages. Must be called repeatedly in your main `loop()` function if using Serial Improv.
