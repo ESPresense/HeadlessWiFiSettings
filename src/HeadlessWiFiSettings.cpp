@@ -38,6 +38,18 @@ namespace {
 #define Sprintf(f, ...) ({ char* s; asprintf(&s, f, __VA_ARGS__); String r = s; free(s); r; })
 
 namespace { // Helpers
+static constexpr char ERROR_FLASH[] = "Error writing to flash filesystem";
+static constexpr char PENDING_WIFI_FILE[] = "/pending-wifi";
+static constexpr char ENDPOINT_NOT_FOUND[] = "Endpoint not found";
+static constexpr char ERROR_AP_START[] = "Failed to start access point!";
+static constexpr char WIFI_PATH[] = "/wifi/";
+static constexpr char JSON_NAME_VALUE[] = "\"{name}\":\"{value}\"";
+static constexpr char JSON_NAME_NUM[] = "\"{name}\":{value}";
+static constexpr char CONTENT_JSON[] = "application/json; charset=utf-8";
+static constexpr char CONTENT_TEXT[] = "text/plain";
+
+void ensureMainEndpoint();
+
     String slurp(const String &fn) {
         File f = ESPFS.open(fn, "r");
         String r = f.readString();
@@ -53,6 +65,24 @@ namespace { // Helpers
         auto w = f.print(content);
         f.close();
         return w == content.length();
+    }
+
+    // Helper to format JSON string values
+    String jsonString(const String &name, const String &value) {
+        if (value == "") return "";
+        String j = F(JSON_NAME_VALUE);
+        j.replace("{name}", json_encode(name));
+        j.replace("{value}", json_encode(value));
+        return j;
+    }
+
+    // Helper to format JSON numeric values
+    String jsonNumeric(const String &name, const String &value) {
+        if (value == "") return "";
+        String j = F(JSON_NAME_NUM);
+        j.replace("{name}", json_encode(name));
+        j.replace("{value}", value);
+        return j;
     }
 
     enum class ParamType {
@@ -97,42 +127,16 @@ namespace { // Helpers
 
         std::vector<String> options;
 
-        String jsonValue() {
-            if (value == "") return "";
-            String j = F("\"{name}\":\"{value}\"");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", json_encode(value));
-            return j;
-        }
-
-        String jsonDefault() {
-            if (init == "") return "";
-            String j = F("\"{name}\":\"{value}\"");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", json_encode(init));
-            return j;
-        }
+        String jsonValue() { return jsonString(name, value); }
+        String jsonDefault() { return jsonString(name, init); }
     };
 
     struct HeadlessWiFiSettingsString : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsString() { type = ParamType::String; }
         virtual void set(const String &v) { value = v; }
 
-        String jsonValue() {
-            if (value == "") return "";
-            String j = F("\"{name}\":\"{value}\"");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", json_encode(value));
-            return j;
-        }
-
-        String jsonDefault() {
-            if (init == "") return "";
-            String j = F("\"{name}\":\"{value}\"");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", json_encode(init));
-            return j;
-        }
+        String jsonValue() { return jsonString(name, value); }
+        String jsonDefault() { return jsonString(name, init); }
     };
 
     static const char* const MASKED_PASSWORD = "***###***";
@@ -144,80 +148,32 @@ namespace { // Helpers
             value = v;
         }
 
-        String jsonValue() {
-            if (!value.length()) return "";
-            String j = F("\"{name}\":\"{value}\"");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", json_encode(MASKED_PASSWORD));
-            return j;
-        }
-
-        String jsonDefault() {
-            return "";
-        }
-    };  // HeadlessWiFiSettingsPassword
+        String jsonValue() { return value.length() ? jsonString(name, MASKED_PASSWORD) : ""; }
+        String jsonDefault() { return ""; }
+    };
 
     struct HeadlessWiFiSettingsInt : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsInt() { type = ParamType::Int; }
         virtual void set(const String &v) { value = v; }
 
-        String jsonValue() {
-            if (value == "") return "";
-            String j = F("\"{name}\":{value}");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", String(value.toInt()));
-            return j;
-        }
-
-        String jsonDefault() {
-            if (init == "") return "";
-            String j = F("\"{name}\":{value}");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", String(init.toInt()));
-            return j;
-        }
+        String jsonValue() { return jsonNumeric(name, value.length() ? String(value.toInt()) : ""); }
+        String jsonDefault() { return jsonNumeric(name, init.length() ? String(init.toInt()) : ""); }
     };
 
     struct HeadlessWiFiSettingsFloat : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsFloat() { type = ParamType::Float; }
         virtual void set(const String &v) { value = v; }
 
-        String jsonValue() {
-            if (value == "") return "";
-            String j = F("\"{name}\":{value}");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", String(value.toFloat()));
-            return j;
-        }
-
-        String jsonDefault() {
-            if (init == "") return "";
-            String j = F("\"{name}\":{value}");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", String(init.toFloat()));
-            return j;
-        }
+        String jsonValue() { return jsonNumeric(name, value.length() ? String(value.toFloat()) : ""); }
+        String jsonDefault() { return jsonNumeric(name, init.length() ? String(init.toFloat()) : ""); }
     };
 
     struct HeadlessWiFiSettingsBool : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsBool() { type = ParamType::Bool; }
         virtual void set(const String &v) { value = v.length() ? "1" : "0"; }
 
-        String jsonValue() {
-            if (value == "") return "";
-            String j = F("\"{name}\":{value}");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", value.toInt() ? "true" : "false");
-            return j;
-        }
-
-        String jsonDefault() {
-            if (init == "") return "";
-            String j = F("\"{name}\":{value}");
-            j.replace("{name}", json_encode(name));
-            j.replace("{value}", init.toInt() ? "true" : "false");
-            return j;
-        }
+        String jsonValue() { return jsonNumeric(name, value.length() ? (value.toInt() ? "true" : "false") : ""); }
+        String jsonDefault() { return jsonNumeric(name, init.length() ? (init.toInt() ? "true" : "false") : ""); }
     };
 
     // Parallel vectors for endpoint names and parameters
@@ -225,17 +181,21 @@ namespace { // Helpers
     std::vector<std::vector<HeadlessWiFiSettingsParameter *>> endpointParams;
     uint8_t currentEndpointIndex = 0;
 
-    std::vector<HeadlessWiFiSettingsParameter *> *params() {
-        // Ensure we have at least the main endpoint
+    void ensureMainEndpoint() {
         if (endpointNames.empty()) {
             endpointNames.push_back("main");
             endpointParams.push_back({});
         }
+    }
+
+    std::vector<HeadlessWiFiSettingsParameter *> *params() {
+        ensureMainEndpoint();
         return &endpointParams[currentEndpointIndex];
     }
 
     // Find or create endpoint
     uint8_t findOrCreateEndpoint(const String& name) {
+        ensureMainEndpoint();
         // Look for existing endpoint
         for (size_t i = 0; i < endpointNames.size(); i++) {
             if (endpointNames[i] == name) {
@@ -246,6 +206,17 @@ namespace { // Helpers
         endpointNames.push_back(name);
         endpointParams.push_back({});
         return endpointNames.size() - 1;
+    }
+
+    // Find existing endpoint (returns -1 if not found)
+    int findEndpoint(const String& name) {
+        ensureMainEndpoint();
+        for (size_t i = 0; i < endpointNames.size(); i++) {
+            if (endpointNames[i] == name) {
+                return i;
+            }
+        }
+        return -1;
     }
 } // namespace
 
@@ -359,18 +330,18 @@ void HeadlessWiFiSettingsClass::markExtra() {
     currentEndpointIndex = findOrCreateEndpoint("extras");
 }
 
-void HeadlessWiFiSettingsClass::beginSerialImprov(const char* firmwareName, const char* version, const char* deviceName) {
+void HeadlessWiFiSettingsClass::beginSerialImprov(const char *firmwareName, const char *version, const char *deviceName) {
     begin();
     if (improv) {
         delete improv;
         improv = nullptr;
     }
-    const char* chip = "ESP32";
-    const char* name = (deviceName && deviceName[0]) ? deviceName : hostname.c_str();
+    const char *chip = "ESP32";
+    const char *name = (deviceName && deviceName[0]) ? deviceName : hostname.c_str();
     improv = new ImprovWiFi(firmwareName, version, chip, name);
-    improv->setInfoCallback([](const char* msg) { Serial.println(msg); });
-    improv->setDebugCallback([](const char* msg) { Serial.println(msg); });
-    improv->setWiFiCallback([this](const char* ssid, const char* password) {
+    improv->setInfoCallback([](const char *msg) { Serial.println(msg); });
+    improv->setDebugCallback([](const char *msg) { Serial.println(msg); });
+    improv->setWiFiCallback([this](const char *ssid, const char *password) {
         spurt("/wifi-ssid", ssid);
         spurt("/wifi-password", password);
         if (onConfigSaved) onConfigSaved();
@@ -407,7 +378,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.print("GET ");
         Serial.println(path);
 
-        String paramName = path.substring(13); // Remove "/wifi/options/"
+        String paramName = path.substring(14); // Remove "/wifi/options/"
 
         // Search all endpoints for the parameter
         HeadlessWiFiSettingsDropdown* dropdown = nullptr;
@@ -424,11 +395,11 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         }
 
         if (!dropdown) {
-            request->send(404, "text/plain", "Dropdown not found");
+            request->send(404, CONTENT_TEXT, "Dropdown not found");
             return;
         }
 
-        AsyncResponseStream *response = request->beginResponseStream("application/json; charset=utf-8");
+        AsyncResponseStream *response = request->beginResponseStream(CONTENT_JSON);
         response->print("[");
         bool needsComma = false;
         for (const auto& option : dropdown->options) {
@@ -446,7 +417,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.println(path);
 
         int numNetworks = WiFi.scanNetworks();
-        AsyncResponseStream *response = request->beginResponseStream("application/json; charset=utf-8");
+        AsyncResponseStream *response = request->beginResponseStream(CONTENT_JSON);
         response->print("{\"networks\":{");
 
         bool needsComma = false;
@@ -498,34 +469,16 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         String path = request->url();
         Serial.print("GET ");
         Serial.println(path);
-        String endpointName;
-        size_t endpointIndex;
 
-        if (path == "/wifi") {
-            endpointName = "main";
-        } else if (path.startsWith("/wifi/")) {
-            endpointName = path.substring(6); // Remove "/wifi/"
-        } else {
-            request->send(404);
+        String endpointName = (path.length() <= 6) ? "main" : path.substring(6);
+        int endpointIndex = findEndpoint(endpointName);
+
+        if (endpointIndex < 0) {
+            request->send(404, CONTENT_TEXT, ENDPOINT_NOT_FOUND);
             return;
         }
 
-        // Find the endpoint
-        bool found = false;
-        for (size_t i = 0; i < endpointNames.size(); i++) {
-            if (endpointNames[i] == endpointName) {
-                endpointIndex = i;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            request->send(404, "text/plain", "Endpoint not found");
-            return;
-        }
-
-        AsyncResponseStream *response = request->beginResponseStream("application/json; charset=utf-8");
+        AsyncResponseStream *response = request->beginResponseStream(CONTENT_JSON);
         response->print("{");
 
         // Output current values
@@ -560,30 +513,11 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.print("POST ");
         Serial.println(path);
 
-        String endpointName;
-        size_t endpointIndex;
+        String endpointName = (path.length() <= 6) ? "main" : path.substring(6);
+        int endpointIndex = findEndpoint(endpointName);
 
-        if (path == "/wifi") {
-            endpointName = "main";
-        } else if (path.startsWith("/wifi/")) {
-            endpointName = path.substring(6); // Remove "/wifi/"
-        } else {
-            request->send(404);
-            return;
-        }
-
-        // Find the endpoint
-        bool found = false;
-        for (size_t i = 0; i < endpointNames.size(); i++) {
-            if (endpointNames[i] == endpointName) {
-                endpointIndex = i;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            request->send(404, "text/plain", "Endpoint not found");
+        if (endpointIndex < 0) {
+            request->send(404, CONTENT_TEXT, ENDPOINT_NOT_FOUND);
             return;
         }
 
@@ -597,7 +531,8 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
             request->send(200);
             if (onConfigSaved) onConfigSaved();
         } else {
-            request->send(500, "text/plain", "Error writing to flash filesystem");
+            Serial.println(ERROR_FLASH);
+            request->send(500, CONTENT_TEXT, ERROR_FLASH);
         }
     });
 
@@ -606,7 +541,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.print("GET ");
         Serial.println(path);
         if (redirect(request)) return;
-        request->send(404, "text/plain", "404");
+        request->send(404, CONTENT_TEXT, "404");
     });
 
     http.begin();
@@ -686,11 +621,11 @@ void HeadlessWiFiSettingsClass::portal() {
     if (secure && password.length()) {
         Serial.printf("SSID: '%s', Password: '%s'\n", hostname.c_str(), password.c_str());
         if (!WiFi.softAP(hostname.c_str(), password.c_str()))
-            Serial.println("Failed to start access point!");
+            Serial.println(ERROR_AP_START);
     } else {
         Serial.printf("SSID: '%s'\n", hostname.c_str());
         if (!WiFi.softAP(hostname.c_str()))
-            Serial.println("Failed to start access point!");
+            Serial.println(ERROR_AP_START);
     }
     delay(500);
     DNSServer dns;
@@ -707,6 +642,7 @@ void HeadlessWiFiSettingsClass::portal() {
     int desired = 0;
     for (;;) {
         dns.processNextRequest();
+        loop();
         if (onPortalWaitLoop && (millis() - starttime) > desired) {
             desired = onPortalWaitLoop();
             starttime = millis();
@@ -731,8 +667,8 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
     WiFi.persistent(false);
     WiFi.setAutoReconnect(false);
 
-    String ssid = slurp("/wifi-ssid");
-    String pw = slurp("/wifi-password");
+    String const ssid = slurp("/wifi-ssid");
+    String const pw = slurp("/wifi-password");
     if (ssid.length() == 0) {
         Serial.println(F("First contact!\n"));
         if (portal) {
@@ -762,6 +698,7 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
             Serial.print(".");
             status = WiFi.status();
         }
+        loop();
         delay(onWaitLoop ? onWaitLoop() : 100);
         if (wait_seconds >= 0 && millis() - starttime > wait_ms)
             break;
@@ -775,6 +712,10 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
     }
 
     Serial.println(WiFi.localIP().toString());
+    if (ESPFS.exists(PENDING_WIFI_FILE)) {
+        ESPFS.remove(PENDING_WIFI_FILE);
+        if (improv) improv->handleConnectionResult(true);
+    }
     if (onSuccess) onSuccess();
     return true;
 }
