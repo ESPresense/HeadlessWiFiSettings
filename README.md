@@ -48,6 +48,24 @@ void setup() {
 }
 ```
 
+### Serial Improv provisioning
+
+HeadlessWiFiSettings can receive WiFi credentials over the [Improv Wi-Fi serial protocol](https://improv-wifi.com/).
+Initialise the serial handler and call the loop handler from your main loop:
+
+```C++
+void setup() {
+    Serial.begin(115200);
+    SPIFFS.begin(true);
+    HeadlessWiFiSettings.beginSerialImprov("HeadlessWiFiSettings", "1.0");
+    HeadlessWiFiSettings.connect();
+}
+
+void loop() {
+    HeadlessWiFiSettings.serialImprovLoop();
+}
+```
+
 ## JSON Endpoints
 
 The library provides two main endpoints for configuration:
