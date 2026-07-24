@@ -78,6 +78,17 @@ When the device first starts without any stored WiFi credentials, it will automa
 
 ### Configuring WiFi via HTTP Endpoints
 
+To configure the credentials through the generic `/wifi` endpoint, register the
+credential parameters before calling `connect()` or `portal()`:
+
+```C++
+HeadlessWiFiSettings.string("wifi-ssid", "");
+HeadlessWiFiSettings.pstring("wifi-password", "");
+```
+
+These names store to `/wifi-ssid` and `/wifi-password` in SPIFFS, which are the
+files `connect()` reads when joining the configured network.
+
 Connect to the ESP32's access point and use the endpoints below to configure WiFi:
 
 ```bash

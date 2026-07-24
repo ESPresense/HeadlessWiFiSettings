@@ -12,6 +12,7 @@
 #include <limits.h>
 
 #include <vector>
+#include "HeadlessWiFiSettingsInternals.h"
 #include "json_utils.h"
 
 #if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
@@ -38,14 +39,19 @@ namespace {
 #define Sprintf(f, ...) ({ char* s; asprintf(&s, f, __VA_ARGS__); String r = s; free(s); r; })
 
 namespace { // Helpers
-static constexpr char ERROR_FLASH[] = "Error writing to flash filesystem";
-static constexpr char ENDPOINT_NOT_FOUND[] = "Endpoint not found";
-static constexpr char ERROR_AP_START[] = "Failed to start access point!";
-static constexpr char WIFI_PATH[] = "/wifi/";
-static constexpr char JSON_NAME_VALUE[] = "\"{name}\":\"{value}\"";
-static constexpr char JSON_NAME_NUM[] = "\"{name}\":{value}";
-static constexpr char CONTENT_JSON[] = "application/json; charset=utf-8";
-static constexpr char CONTENT_TEXT[] = "text/plain";
+using HeadlessWiFiSettingsInternals::CONTENT_JSON;
+using HeadlessWiFiSettingsInternals::CONTENT_TEXT;
+using HeadlessWiFiSettingsInternals::ENDPOINT_NOT_FOUND;
+using HeadlessWiFiSettingsInternals::ERROR_AP_START;
+using HeadlessWiFiSettingsInternals::ERROR_FLASH;
+using HeadlessWiFiSettingsInternals::MASKED_PASSWORD;
+using HeadlessWiFiSettingsInternals::jsonBool;
+using HeadlessWiFiSettingsInternals::jsonFloat;
+using HeadlessWiFiSettingsInternals::jsonInt;
+using HeadlessWiFiSettingsInternals::jsonNumeric;
+using HeadlessWiFiSettingsInternals::jsonPasswordDefault;
+using HeadlessWiFiSettingsInternals::jsonPasswordValue;
+using HeadlessWiFiSettingsInternals::jsonString;
 
 void ensureMainEndpoint();
 
@@ -64,24 +70,6 @@ void ensureMainEndpoint();
         auto w = f.print(content);
         f.close();
         return w == content.length();
-    }
-
-    // Helper to format JSON string values
-    String jsonString(const String &name, const String &value) {
-        if (value == "") return "";
-        String j = F(JSON_NAME_VALUE);
-        j.replace("{name}", json_encode(name));
-        j.replace("{value}", json_encode(value));
-        return j;
-    }
-
-    // Helper to format JSON numeric values
-    String jsonNumeric(const String &name, const String &value) {
-        if (value == "") return "";
-        String j = F(JSON_NAME_NUM);
-        j.replace("{name}", json_encode(name));
-        j.replace("{value}", value);
-        return j;
     }
 
     enum class ParamType {
@@ -138,8 +126,6 @@ void ensureMainEndpoint();
         String jsonDefault() { return jsonString(name, init); }
     };
 
-    static const char* const MASKED_PASSWORD = "***###***";
-
     struct HeadlessWiFiSettingsPassword : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsPassword() { type = ParamType::Password; }
         virtual void set(const String &v) {
@@ -147,32 +133,32 @@ void ensureMainEndpoint();
             value = v;
         }
 
-        String jsonValue() { return value.length() ? jsonString(name, MASKED_PASSWORD) : ""; }
-        String jsonDefault() { return ""; }
+        String jsonValue() { return jsonPasswordValue(name, value); }
+        String jsonDefault() { return jsonPasswordDefault(name, init); }
     };
 
     struct HeadlessWiFiSettingsInt : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsInt() { type = ParamType::Int; }
         virtual void set(const String &v) { value = v; }
 
-        String jsonValue() { return jsonNumeric(name, value.length() ? String(value.toInt()) : ""); }
-        String jsonDefault() { return jsonNumeric(name, init.length() ? String(init.toInt()) : ""); }
+        String jsonValue() { return jsonInt(name, value); }
+        String jsonDefault() { return jsonInt(name, init); }
     };
 
     struct HeadlessWiFiSettingsFloat : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsFloat() { type = ParamType::Float; }
         virtual void set(const String &v) { value = v; }
 
-        String jsonValue() { return jsonNumeric(name, value.length() ? String(value.toFloat()) : ""); }
-        String jsonDefault() { return jsonNumeric(name, init.length() ? String(init.toFloat()) : ""); }
+        String jsonValue() { return jsonFloat(name, value); }
+        String jsonDefault() { return jsonFloat(name, init); }
     };
 
     struct HeadlessWiFiSettingsBool : HeadlessWiFiSettingsParameter {
         HeadlessWiFiSettingsBool() { type = ParamType::Bool; }
         virtual void set(const String &v) { value = v.length() ? "1" : "0"; }
 
-        String jsonValue() { return jsonNumeric(name, value.length() ? (value.toInt() ? "true" : "false") : ""); }
-        String jsonDefault() { return jsonNumeric(name, init.length() ? (init.toInt() ? "true" : "false") : ""); }
+        String jsonValue() { return jsonBool(name, value); }
+        String jsonDefault() { return jsonBool(name, init); }
     };
 
     // Parallel vectors for endpoint names and parameters
@@ -210,12 +196,7 @@ void ensureMainEndpoint();
     // Find existing endpoint (returns -1 if not found)
     int findEndpoint(const String& name) {
         ensureMainEndpoint();
-        for (size_t i = 0; i < endpointNames.size(); i++) {
-            if (endpointNames[i] == name) {
-                return i;
-            }
-        }
-        return -1;
+        return HeadlessWiFiSettingsInternals::findEndpoint(name, endpointNames);
     }
 } // namespace
 
@@ -377,7 +358,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.print("GET ");
         Serial.println(path);
 
-        String paramName = path.substring(14); // Remove "/wifi/options/"
+        String paramName = HeadlessWiFiSettingsInternals::wifiOptionsParamName(path);
 
         // Search all endpoints for the parameter
         HeadlessWiFiSettingsDropdown* dropdown = nullptr;
@@ -469,7 +450,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.print("GET ");
         Serial.println(path);
 
-        String endpointName = (path.length() <= 6) ? "main" : path.substring(6);
+        String endpointName = HeadlessWiFiSettingsInternals::wifiEndpointName(path);
         int endpointIndex = findEndpoint(endpointName);
 
         if (endpointIndex < 0) {
@@ -512,7 +493,7 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
         Serial.print("POST ");
         Serial.println(path);
 
-        String endpointName = (path.length() <= 6) ? "main" : path.substring(6);
+        String endpointName = HeadlessWiFiSettingsInternals::wifiEndpointName(path);
         int endpointIndex = findEndpoint(endpointName);
 
         if (endpointIndex < 0) {
