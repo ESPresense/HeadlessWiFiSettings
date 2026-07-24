@@ -48,6 +48,34 @@ void setup() {
 }
 ```
 
+### Serial Improv provisioning
+
+HeadlessWiFiSettings can receive WiFi credentials over the [Improv Wi-Fi serial protocol](https://improv-wifi.com/).
+Initialise the serial handler and call the loop handler from your main loop:
+
+```C++
+void setup() {
+    Serial.begin(115200);
+    SPIFFS.begin(true);
+    HeadlessWiFiSettings.startImprovSerial("HeadlessWiFiSettings", "1.0");
+    HeadlessWiFiSettings.connect();
+}
+
+void loop() {
+    HeadlessWiFiSettings.loop();
+}
+```
+
+To exercise the Serial Improv protocol over USB without a GUI, install `pyserial`
+(`python3 -m pip install --user pyserial`) and run the helper script:
+
+```bash
+python3 examples/SerialImprov/test_improv.py /dev/cu.usbserial-54F70151721 MyWiFi MyPassword
+```
+
+Leave the SSID/password arguments off if you only want to send IDENTIFY/GET
+STATE RPCs.
+
 ## WiFi Configuration
 
 ### Initial Setup
@@ -73,6 +101,20 @@ curl http://192.168.4.1/wifi/main
 curl -X POST http://192.168.4.1/wifi \
   -d "wifi-ssid=YourNetworkName" \
   -d "wifi-password=YourPassword"
+```
+
+### Configuring WiFi via Serial Improv
+
+The library supports the [Improv Wi-Fi serial protocol](https://improv-wifi.com/) for provisioning over USB serial:
+
+```C++
+HeadlessWiFiSettings.startImprovSerial("MyDevice", "1.0");
+```
+
+You can then use any Improv-compatible tool or the included Python script:
+
+```bash
+python3 examples/SerialImprov/test_improv.py /dev/ttyUSB0 MyWiFi MyPassword
 ```
 
 ### Multiple Endpoint Configuration
@@ -249,6 +291,9 @@ void setup() {
         });
     };
 
+    // Enable Serial Improv for USB provisioning
+    HeadlessWiFiSettings.startImprovSerial("MyDevice", "1.0.0");
+
     // Connect to WiFi (30 second timeout, show portal on failure)
     HeadlessWiFiSettings.connect(true, 30);
 
@@ -260,6 +305,9 @@ void setup() {
 }
 
 void loop() {
+    // Process Serial Improv messages
+    HeadlessWiFiSettings.loop();
+
     // Your application code here
     delay(100);
 }
@@ -422,6 +470,22 @@ void markExtra();
 ```
 
 Convenience function that switches to the "extras" endpoint. Equivalent to `markEndpoint("extras")`.
+
+#### HeadlessWiFiSettings.startImprovSerial(...)
+
+```C++
+void startImprovSerial(String firmware, String version, String chip = "");
+```
+
+Enables the Improv Wi-Fi serial protocol for provisioning over USB. The firmware name, version, and optionally chip family are advertised to provisioning tools.
+
+#### HeadlessWiFiSettings.loop()
+
+```C++
+void loop();
+```
+
+Processes Improv serial protocol messages. Must be called repeatedly in your main `loop()` function if using Serial Improv.
 
 ### Variables
 

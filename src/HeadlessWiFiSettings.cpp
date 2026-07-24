@@ -18,6 +18,7 @@
 
 namespace { // Helpers
 static constexpr char ERROR_FLASH[] = "Error writing to flash filesystem";
+static constexpr char PENDING_WIFI_FILE[] = "/pending-wifi";
 static constexpr char ENDPOINT_NOT_FOUND[] = "Endpoint not found";
 static constexpr char ERROR_AP_START[] = "Failed to start access point!";
 static constexpr char WIFI_PATH[] = "/wifi/";
@@ -308,6 +309,42 @@ void HeadlessWiFiSettingsClass::markExtra() {
     currentEndpointIndex = findOrCreateEndpoint("extras");
 }
 
+void HeadlessWiFiSettingsClass::startImprovSerial(const String& firmware, const String& version, const String& chip) {
+    begin();
+    if (improv) {
+        delete improv;
+        improv = nullptr;
+    }
+    improvFirmware = firmware;
+    improvVersion = version;
+    improvChip = chip;
+    improv = new ImprovWiFi(improvFirmware.c_str(), improvVersion.c_str(), improvChip.c_str(), hostname.c_str());
+    // Info/debug callbacks are intentionally omitted: they print to the same UART
+    // the Improv protocol uses, corrupting the byte stream.
+    improv->setWiFiCallback([this](const char* ssid, const char* password) {
+        if (!(spurt("/wifi-ssid", ssid) && spurt("/wifi-password", password))) {
+            // Leave the connection unstarted; ImprovWiFi::loop() reports the
+            // 10s timeout as an error. No Serial print (would corrupt the stream).
+            if (onFailure) onFailure();
+            return;
+        }
+        spurt(PENDING_WIFI_FILE, "1");
+        if (onConfigSaved) onConfigSaved();
+
+        // Start connecting with the new credentials. ImprovWiFi::loop() polls
+        // WiFi.status() and sends PROVISIONED (with the device URL) once we
+        // connect, so we must NOT restart here — that would drop the serial
+        // session before the client receives its reply.
+        WiFi.disconnect(true, true);
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(ssid, password);
+    });
+}
+
+void HeadlessWiFiSettingsClass::loop() {
+    if (improv) improv->loop();
+}
+
 void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     begin();
 
@@ -533,6 +570,7 @@ void HeadlessWiFiSettingsClass::portal() {
     int desired = 0;
     for (;;) {
         dns.processNextRequest();
+        loop();
         if (onPortalWaitLoop && (millis() - starttime) > desired) {
             desired = onPortalWaitLoop();
             starttime = millis();
@@ -561,9 +599,11 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
         this->portal();
     }
 
-    Serial.print(F("Connecting to WiFi SSID '"));
-    Serial.print(ssid);
-    Serial.print(F("'"));
+    if (!improv) {
+        Serial.print(F("Connecting to WiFi SSID '"));
+        Serial.print(ssid);
+        Serial.print(F("'"));
+    }
     if (onConnect) onConnect();
 
     WiFi.setHostname(hostname.c_str());
@@ -575,26 +615,35 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
     while (status != WL_CONNECTED) {
         if (millis() - lastbegin > 60000) {
             lastbegin = millis();
-            Serial.print("*");
+            if (!improv) Serial.print("*");
             WiFi.disconnect(true, true);
             status = WiFi.begin(ssid.c_str(), pw.c_str());
         } else {
-            Serial.print(".");
+            if (!improv) Serial.print(".");
             status = WiFi.status();
         }
+        loop();
         delay(onWaitLoop ? onWaitLoop() : 100);
         if (wait_seconds >= 0 && millis() - starttime > wait_ms)
             break;
     }
 
     if (status != WL_CONNECTED) {
-        Serial.printf(" failed (status=%d).\n", status);
+        if (!improv) {
+            Serial.printf(" failed (status=%d).\n", status);
+            WiFi.printDiag(Serial);
+        }
+        // On failure, ImprovWiFi::loop() reports the error via its own 10s timeout.
         if (onFailure) onFailure();
         if (portal) this->portal();
         return false;
     }
 
-    Serial.println(WiFi.localIP().toString());
+    if (!improv) Serial.println(WiFi.localIP().toString());
+    if (ESPFS.exists(PENDING_WIFI_FILE)) {
+        // ImprovWiFi::loop() sees WL_CONNECTED and sends PROVISIONED + the device URL.
+        ESPFS.remove(PENDING_WIFI_FILE);
+    }
     if (onSuccess) onSuccess();
     return true;
 }

@@ -5,6 +5,7 @@
 #include <functional>
 
 #include <ESPAsyncWebServer.h>
+#include <ImprovWiFi.h>
 
 class HeadlessWiFiSettingsClass {
   public:
@@ -19,6 +20,8 @@ class HeadlessWiFiSettingsClass {
     bool connect(bool portal = true, int wait_seconds = 60);
     void portal();
     void httpSetup(bool wifi = false);
+    void startImprovSerial(const String &firmware, const String &version, const String &chip = String());
+    void loop();
     String string(const String &name, const String &init = "", const String &label = "");
     String string(const String &name, unsigned int max_length, const String &init = "", const String &label = "");
     String string(const String &name, unsigned int min_length, unsigned int max_length, const String &init = "", const String &label = "");
@@ -43,13 +46,16 @@ class HeadlessWiFiSettingsClass {
     TCallback onPortalView;
     TCallbackString onUserAgent;
     TCallback onConfigSaved;
-    TCallback onRestart;
     TCallbackReturnsInt onPortalWaitLoop;
 
   private:
     AsyncWebServer http;
     bool begun = false;
     bool httpBegun = false;
+    ImprovWiFi *improv = nullptr;
+    String improvFirmware;
+    String improvVersion;
+    String improvChip;
 };
 
 extern HeadlessWiFiSettingsClass HeadlessWiFiSettings;
