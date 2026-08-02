@@ -12,6 +12,7 @@
  * - Graceful handling of connection failures
  */
 
+#include <WiFi.h>
 #include <SPIFFS.h>
 #include <HeadlessWiFiSettings.h>
 

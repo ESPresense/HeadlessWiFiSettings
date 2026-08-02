@@ -21,7 +21,8 @@
           "platforms": "espressif32"
         },
         {
-          "name": "judge2005/ImprovWiFi"
+          "name": "ImprovWiFi",
+          "version": "https://github.com/ESPresense/ImprovWiFi.git"
         }
       ]
 }

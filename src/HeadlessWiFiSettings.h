@@ -6,9 +6,11 @@
 
 #include <ESPAsyncWebServer.h>
 
+// Serial Improv is optional: it is compiled in only when the ImprovWiFi library
+// (ESPresense/ImprovWiFi) is available, so builds that don't want it are unaffected.
 #if defined(__has_include)
-#  if __has_include(<ImprovWiFiLibrary.h>)
-#    include <ImprovWiFiLibrary.h>
+#  if __has_include(<ImprovWiFi.h>)
+#    include <ImprovWiFi.h>
 #    define HEADLESS_WIFI_SETTINGS_HAS_IMPROV 1
 #  else
 #    define HEADLESS_WIFI_SETTINGS_HAS_IMPROV 0
@@ -32,9 +34,7 @@ class HeadlessWiFiSettingsClass {
     void httpSetup(bool softAP = false);
     void beginSerialImprov(const String &firmwareName,
                            const String &firmwareVersion,
-                           const String &deviceName = "",
-                           Stream *serial = nullptr,
-                           const String &deviceUrl = "");
+                           const String &deviceName = "");
     void serialImprovLoop();
     String string(const String &name, const String &init = "", const String &label = "");
     String string(const String &name, unsigned int max_length, const String &init = "", const String &label = "");
@@ -62,21 +62,26 @@ class HeadlessWiFiSettingsClass {
     TCallback onConfigSaved;
     TCallback onRestart;
     TCallbackReturnsInt onPortalWaitLoop;
-    TCallback onImprovIdentify;
 
   private:
     AsyncWebServer http;
     bool begun = false;
     bool httpBegun = false;
+    // True while Serial Improv is active; used to keep debug prints off the
+    // shared UART so they don't corrupt the Improv byte stream.
+    bool improvActive() const {
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
+        return improv != nullptr;
+#else
+        return false;
+#endif
+    }
 #if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
     ImprovWiFi *improv = nullptr;
-    Stream *improvSerial = nullptr;
-    bool handleImprovCredentials(const char *ssid, const char *password);
-    void handleImprovIdentify();
-    static bool improvConnectTrampoline(const char *ssid, const char *password);
-#if defined(IMPROV_WIFI_LIBRARY_HAS_IDENTIFY_CALLBACK)
-    static void improvIdentifyTrampoline();
-#endif
+    String improvFirmware;
+    String improvVersion;
+    String improvChip;
+    String improvName;
 #endif
 };
 

@@ -16,22 +16,20 @@
 
 #if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
 namespace {
-    HeadlessWiFiSettingsClass* g_headlessImprovInstance = nullptr;
-
-    ImprovTypes::ChipFamily detectChipFamily() {
+    // Chip family advertised to Improv provisioning tools.
+    const char* improvChipName() {
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
-        return ImprovTypes::ChipFamily::CF_ESP32_C3;
+        return "ESP32-C3";
 #elif defined(CONFIG_IDF_TARGET_ESP32S2)
-        return ImprovTypes::ChipFamily::CF_ESP32_S2;
+        return "ESP32-S2";
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
-        return ImprovTypes::ChipFamily::CF_ESP32_S3;
+        return "ESP32-S3";
 #elif defined(ARDUINO_ARCH_ESP8266)
-        return ImprovTypes::ChipFamily::CF_ESP8266;
+        return "ESP8266";
 #else
-        return ImprovTypes::ChipFamily::CF_ESP32;
+        return "ESP32";
 #endif
     }
-
 }
 #endif
 
@@ -329,27 +327,45 @@ void HeadlessWiFiSettingsClass::markExtra() {
     currentEndpointIndex = findOrCreateEndpoint("extras");
 }
 
-void HeadlessWiFiSettingsClass::beginSerialImprov(const char* firmwareName, const char* version, const char* deviceName) {
+void HeadlessWiFiSettingsClass::beginSerialImprov(const String& firmwareName, const String& firmwareVersion, const String& deviceName) {
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
     begin();
     if (improv) {
         delete improv;
         improv = nullptr;
     }
-    const char* chip = "ESP32";
-    const char* name = (deviceName && deviceName[0]) ? deviceName : hostname.c_str();
-    improv = new ImprovWiFi(firmwareName, version, chip, name);
-    improv->setInfoCallback([](const char* msg) { Serial.println(msg); });
-    improv->setDebugCallback([](const char* msg) { Serial.println(msg); });
+    improvFirmware = firmwareName;
+    improvVersion = firmwareVersion;
+    improvChip = improvChipName();
+    improvName = deviceName.length() ? deviceName : hostname;
+    // NOTE: ImprovWiFi keeps the pointers, so these must be long-lived members.
+    improv = new ImprovWiFi(improvFirmware.c_str(), improvVersion.c_str(), improvChip.c_str(), improvName.c_str());
+    // No info/debug callbacks: they would print onto the same UART the Improv
+    // protocol uses and corrupt the byte stream.
     improv->setWiFiCallback([this](const char* ssid, const char* password) {
-        spurt("/wifi-ssid", ssid);
-        spurt("/wifi-password", password);
+        if (!(spurt("/wifi-ssid", ssid) && spurt("/wifi-password", password))) {
+            if (onFailure) onFailure();
+            return;  // ImprovWiFi::loop() reports the 10s timeout as an error
+        }
         if (onConfigSaved) onConfigSaved();
-        connect(false);
+        // Non-blocking: kick off the connection and return immediately. ImprovWiFi::loop()
+        // polls WiFi.status() and sends PROVISIONED (with the device URL) once we connect.
+        // Blocking here would starve the task watchdog and stall the Improv handler;
+        // restarting would drop the serial session before the client gets its reply.
+        if (WiFi.getMode() & WIFI_STA) WiFi.disconnect(true, true);
+        WiFi.mode(WIFI_STA);
+        WiFi.setHostname(hostname.c_str());
+        WiFi.begin(ssid, password);
     });
+#else
+    (void)firmwareName; (void)firmwareVersion; (void)deviceName;
+#endif
 }
 
 void HeadlessWiFiSettingsClass::serialImprovLoop() {
+#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
     if (improv) improv->loop();
+#endif
 }
 
 void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
@@ -546,66 +562,6 @@ void HeadlessWiFiSettingsClass::httpSetup(bool wifi) {
     http.begin();
 }
 
-void HeadlessWiFiSettingsClass::beginSerialImprov(const String& firmwareName,
-                                                  const String& firmwareVersion,
-                                                  const String& deviceName,
-                                                  Stream* serial,
-                                                  const String& deviceUrl) {
-#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
-    begin();
-
-    Stream* targetStream = serial ? serial : &Serial;
-    if (!targetStream) {
-        Serial.println(F("SerialImprov requires a valid Stream instance"));
-        return;
-    }
-
-    if (improv) {
-        delete improv;
-        improv = nullptr;
-    }
-
-    improvSerial = targetStream;
-    improv = new ImprovWiFi(targetStream);
-    g_headlessImprovInstance = this;
-    improv->setCustomConnectWiFi(&improvConnectTrampoline);
-#if defined(IMPROV_WIFI_LIBRARY_HAS_IDENTIFY_CALLBACK)
-    improv->onImprovIdentify(&improvIdentifyTrampoline);
-#endif
-
-    String resolvedName = deviceName.length() ? deviceName : hostname;
-    if (!resolvedName.length()) resolvedName = firmwareName;
-
-    if (deviceUrl.length()) {
-        improv->setDeviceInfo(detectChipFamily(),
-                              firmwareName.c_str(),
-                              firmwareVersion.c_str(),
-                              resolvedName.c_str(),
-                              deviceUrl.c_str());
-    } else {
-        improv->setDeviceInfo(detectChipFamily(),
-                              firmwareName.c_str(),
-                              firmwareVersion.c_str(),
-                              resolvedName.c_str());
-    }
-#else
-    (void)firmwareName;
-    (void)firmwareVersion;
-    (void)deviceName;
-    (void)serial;
-    (void)deviceUrl;
-    Serial.println(F("SerialImprov support unavailable (ImprovWiFiLibrary missing)"));
-#endif
-}
-
-void HeadlessWiFiSettingsClass::serialImprovLoop() {
-#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
-    if (improv) {
-        improv->handleSerial();
-    }
-#endif
-}
-
 void HeadlessWiFiSettingsClass::portal() {
     begin();
 
@@ -641,6 +597,7 @@ void HeadlessWiFiSettingsClass::portal() {
     int desired = 0;
     for (;;) {
         dns.processNextRequest();
+        serialImprovLoop();  // service Improv so a device can be provisioned from the portal
         if (onPortalWaitLoop && (millis() - starttime) > desired) {
             desired = onPortalWaitLoop();
             starttime = millis();
@@ -675,9 +632,11 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
         return false;
     }
 
-    Serial.print(F("Connecting to WiFi SSID '"));
-    Serial.print(ssid);
-    Serial.print(F("'"));
+    if (!improvActive()) {
+        Serial.print(F("Connecting to WiFi SSID '"));
+        Serial.print(ssid);
+        Serial.print(F("'"));
+    }
     if (onConnect) onConnect();
 
     WiFi.setHostname(hostname.c_str());
@@ -689,72 +648,30 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
     while (status != WL_CONNECTED) {
         if (millis() - lastbegin > 60000) {
             lastbegin = millis();
-            Serial.print("*");
+            if (!improvActive()) Serial.print("*");
             WiFi.disconnect(true, true);
             status = WiFi.begin(ssid.c_str(), pw.c_str());
         } else {
-            Serial.print(".");
+            if (!improvActive()) Serial.print(".");
             status = WiFi.status();
         }
+        serialImprovLoop();  // keep Improv responsive during the connection wait
         delay(onWaitLoop ? onWaitLoop() : 100);
         if (wait_seconds >= 0 && millis() - starttime > wait_ms)
             break;
     }
 
     if (status != WL_CONNECTED) {
-        Serial.printf(" failed (status=%d).\n", status);
+        if (!improvActive()) Serial.printf(" failed (status=%d).\n", status);
         if (onFailure) onFailure();
         if (portal) this->portal();
         return false;
     }
 
-    Serial.println(WiFi.localIP().toString());
+    if (!improvActive()) Serial.println(WiFi.localIP().toString());
     if (onSuccess) onSuccess();
     return true;
 }
-
-#if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
-bool HeadlessWiFiSettingsClass::handleImprovCredentials(const char* ssid, const char* password) {
-    begin();
-    if (!ssid || !ssid[0]) {
-        Serial.println(F("Improv: SSID missing"));
-        return false;
-    }
-
-    if (!spurt("/wifi-ssid", String(ssid))) {
-        Serial.println(F("Improv: Failed to save SSID"));
-        return false;
-    }
-
-    if (!spurt("/wifi-password", password ? String(password) : "")) {
-        Serial.println(F("Improv: Failed to save password"));
-        return false;
-    }
-
-    if (onConfigSaved) onConfigSaved();
-    return connect(false);
-}
-
-void HeadlessWiFiSettingsClass::handleImprovIdentify() {
-    if (onImprovIdentify) {
-        onImprovIdentify();
-    }
-}
-
-bool HeadlessWiFiSettingsClass::improvConnectTrampoline(const char* ssid, const char* password) {
-    return g_headlessImprovInstance ?
-           g_headlessImprovInstance->handleImprovCredentials(ssid, password) :
-           false;
-}
-
-#if defined(IMPROV_WIFI_LIBRARY_HAS_IDENTIFY_CALLBACK)
-void HeadlessWiFiSettingsClass::improvIdentifyTrampoline() {
-    if (g_headlessImprovInstance) {
-        g_headlessImprovInstance->handleImprovIdentify();
-    }
-}
-#endif
-#endif
 
 void HeadlessWiFiSettingsClass::begin() {
     if (begun) return;

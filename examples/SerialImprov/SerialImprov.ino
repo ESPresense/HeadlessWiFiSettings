@@ -27,6 +27,7 @@
  * 3. Follow provisioning wizard
  */
 
+#include <WiFi.h>
 #include <SPIFFS.h>
 #include <HeadlessWiFiSettings.h>
 
@@ -88,13 +89,6 @@ void setup() {
         return 500;  // 500ms delay
     };
 
-    // This callback is called when SerialImprov IDENTIFY command is received
-    // Useful for helping users identify which physical device they're configuring
-    HeadlessWiFiSettings.onImprovIdentify = []() {
-        Serial.println("SerialImprov: IDENTIFY command received");
-        blinkLED(10, 50);  // Rapid blinking for identification
-    };
-
     // Define custom configuration parameters
     // These will be available via both SerialImprov and JSON endpoints
     mqttServer = HeadlessWiFiSettings.string("mqtt_server", "mqtt.example.com", "MQTT Server");
@@ -107,6 +101,11 @@ void setup() {
     // 2. If not, start portal mode (accessible via JSON endpoints)
     // 3. If yes, connect to WiFi
     // 4. On failure, start portal mode
+
+    // Enable Serial Improv provisioning. connect()/portal() service it, so a
+    // fresh device can be provisioned over USB before it has any credentials.
+    HeadlessWiFiSettings.beginSerialImprov("HeadlessWiFiSettings", "1.0");
+
     bool connected = HeadlessWiFiSettings.connect(
         true,   // Start portal on failure
         30      // Wait 30 seconds for connection
@@ -146,21 +145,10 @@ void setup() {
 }
 
 void loop() {
-    // Your application code here
-
-    // The SerialImprov protocol handler runs in the background
-    // and will process incoming serial commands automatically
-
-    static unsigned long lastPrint = 0;
-    if (millis() - lastPrint > 10000) {
-        lastPrint = millis();
-
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.print(".");
-        } else {
-            Serial.println("WiFi disconnected!");
-        }
-    }
+    // Service the Serial Improv protocol handler. Required so it can accept
+    // provisioning commands and report results. (Do not print to the same
+    // Serial port here — it would corrupt the Improv byte stream.)
+    HeadlessWiFiSettings.serialImprovLoop();
 
     delay(10);
 }
