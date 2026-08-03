@@ -602,6 +602,9 @@ void HeadlessWiFiSettingsClass::portal() {
     for (;;) {
         dns.processNextRequest();
         loop();
+        // In portal (AP) mode the only path to a connection is Improv provisioning,
+        // so once we're connected, leave the portal and let connect() report success.
+        if (WiFi.status() == WL_CONNECTED) return;
         if (onPortalWaitLoop && (millis() - starttime) > desired) {
             desired = onPortalWaitLoop();
             starttime = millis();
@@ -669,7 +672,8 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
         if (!improvActive()) Serial.printf(" failed (status=%d).\n", status);
         if (onFailure) onFailure();
         if (portal) this->portal();
-        return false;
+        // portal() returns when Improv provisioning has connected us.
+        if (WiFi.status() != WL_CONNECTED) return false;
     }
 
     if (!improvActive()) Serial.println(WiFi.localIP().toString());
