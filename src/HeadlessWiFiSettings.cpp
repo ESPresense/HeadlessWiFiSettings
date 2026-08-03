@@ -366,7 +366,7 @@ void HeadlessWiFiSettingsClass::beginSerialImprov(const String& firmwareName, co
 #endif
 }
 
-void HeadlessWiFiSettingsClass::serialImprovLoop() {
+void HeadlessWiFiSettingsClass::loop() {
 #if HEADLESS_WIFI_SETTINGS_HAS_IMPROV
     if (improv) improv->loop();
 #endif
@@ -601,7 +601,7 @@ void HeadlessWiFiSettingsClass::portal() {
     int desired = 0;
     for (;;) {
         dns.processNextRequest();
-        serialImprovLoop();  // service Improv so a device can be provisioned from the portal
+        loop();
         if (onPortalWaitLoop && (millis() - starttime) > desired) {
             desired = onPortalWaitLoop();
             starttime = millis();
@@ -659,7 +659,7 @@ bool HeadlessWiFiSettingsClass::connect(bool portal, int wait_seconds) {
             if (!improvActive()) Serial.print(".");
             status = WiFi.status();
         }
-        serialImprovLoop();  // keep Improv responsive during the connection wait
+        loop();  // keep Improv responsive during the connection wait
         delay(onWaitLoop ? onWaitLoop() : 100);
         if (wait_seconds >= 0 && millis() - starttime > wait_ms)
             break;

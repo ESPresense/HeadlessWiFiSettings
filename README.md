@@ -62,7 +62,7 @@ void setup() {
 }
 
 void loop() {
-    HeadlessWiFiSettings.serialImprovLoop();
+    HeadlessWiFiSettings.loop();
 }
 ```
 

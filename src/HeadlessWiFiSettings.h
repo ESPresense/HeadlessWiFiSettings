@@ -35,7 +35,7 @@ class HeadlessWiFiSettingsClass {
     void beginSerialImprov(const String &firmwareName,
                            const String &firmwareVersion,
                            const String &deviceName = "");
-    void serialImprovLoop();
+    void loop();
     String string(const String &name, const String &init = "", const String &label = "");
     String string(const String &name, unsigned int max_length, const String &init = "", const String &label = "");
     String string(const String &name, unsigned int min_length, unsigned int max_length, const String &init = "", const String &label = "");

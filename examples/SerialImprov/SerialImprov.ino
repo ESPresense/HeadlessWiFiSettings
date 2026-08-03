@@ -148,7 +148,7 @@ void loop() {
     // Service the Serial Improv protocol handler. Required so it can accept
     // provisioning commands and report results. (Do not print to the same
     // Serial port here — it would corrupt the Improv byte stream.)
-    HeadlessWiFiSettings.serialImprovLoop();
+    HeadlessWiFiSettings.loop();
 
     delay(10);
 }

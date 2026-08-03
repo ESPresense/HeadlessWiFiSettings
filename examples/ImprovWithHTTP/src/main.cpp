@@ -104,9 +104,9 @@ void setup() {
 }
 
 void loop() {
-    // IMPORTANT: Always call serialImprovLoop() in loop
+    // IMPORTANT: Always call loop() in your loop
     // This allows re-provisioning at any time
-    HeadlessWiFiSettings.serialImprovLoop();
+    HeadlessWiFiSettings.loop();
 
     // Your application code here
     static unsigned long lastCheck = 0;
